@@ -14,6 +14,7 @@
 
 - 官网：**[tigris-tv.pages.dev](https://tigris-tv.pages.dev)**
 - 最新正式版：**[v2.0.16 Release](https://github.com/lesnolie/Tigris/releases/tag/v2.0.16)**（[标准版 APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/Tigris-v2.0.16.apk) · [兼容守护版 Guard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/Tigris-guard-v2.0.16.apk) · [SHA-256 校验文件](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/SHA256SUMS-v2.0.16.txt)）
+- 文档地图：**[docs/README.md](docs/README.md)**
 
 [![观看 Tigris 宣传片](docs/screenshots/film.jpg)](https://tigris-tv.pages.dev/#film)
 

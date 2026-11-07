@@ -6,6 +6,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         I18n.initialize(this)
+        VoiceAssistant.initialize(this)
+        VoskChinese.preload(this)
+        if (Prefs(this).voiceAccessibility) VoiceAccessibility.ensure(this)
         Updates.schedule(this)
         val sp = Updates.prefs(this)
         if (System.currentTimeMillis() - sp.getLong("lastLaunchCheck", 0) > 6 * 60 * 60 * 1000L) {

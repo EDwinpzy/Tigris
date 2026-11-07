@@ -10,7 +10,7 @@
     <string name="shelf_custom_url">自定义来源</string>
     <string name="shelf_custom_url_help">关联应用在 Dock 第一排被选中时显示。地址打不开、JSON 不能用或超时时，如果这个应用本来就有顶部内容，就继续用原来的。</string>
     <string name="shelf_custom_unset">未设置</string>
-    <string name="shelf_custom_url_dialog">地址需要返回 JSON 数组，每一项包含 title、meta 和 http 或 https 图片地址。最多保留 12 条。Jellyfin 和 Emby 的原生接口不是这个格式，需要在前面加一个很小的转换服务。</string>
+    <string name="shelf_custom_url_dialog">地址需要返回 JSON 数组，每一项包含 title、meta 和 http 或 https 图片地址。最多保留 12 条。Jellyfin 和 Emby 的原生接口不是这个格式，需要在前面加一个很小的转换服务；也兼容 Matchora 的 /api/v1/live 足球直播接口。</string>
     <string name="shelf_custom_url_hint">https://</string>
     <string name="shelf_custom_url_invalid">请输入 http 或 https 地址</string>
     <string name="shelf_custom_app">关联应用</string>
@@ -20,4 +20,7 @@
     <string name="shelf_custom_source">自定义</string>
     <string name="shelf_custom_save">保存</string>
     <string name="shelf_custom_none">没有可选择的应用</string>
+    <string name="i18n_shelf_007">足球直播</string>
+    <string name="i18n_shelf_008">豆瓣影视</string>
 </resources>
+

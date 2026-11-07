@@ -58,18 +58,24 @@ internal object ShelfLimits {
 }
 
 /**
- * The custom Top Shelf document: a JSON array of `{title, meta, image}`.
- * Extra fields (a per-item page URL, for example) are ignored. The shelf is
- * display-only; confirming the dock tile still opens the linked app.
- * Returns null when the body is not a JSON array, and an empty list when the
- * array contains nothing usable.
+ * The custom Top Shelf document. The native format is a JSON array of
+ * `{title, meta, image}`. Matchora's public `{"events":[...]}` football feed
+ * is also accepted and converted to the same display items.
  */
 internal object ShelfJson {
     data class Item(val title: String, val meta: String, val image: String)
 
     fun parse(text: String): List<Item>? {
         val body = text.removePrefix("\uFEFF").trim()
-        if (body.isEmpty() || !body.startsWith("[")) return null
+        if (body.isEmpty()) return null
+        return when {
+            body.startsWith("[") -> parseArray(body)
+            body.startsWith("{") -> parseEventFeed(body)
+            else -> null
+        }
+    }
+
+    private fun parseArray(body: String): List<Item>? {
         val array = try {
             JSONArray(body)
         } catch (e: Exception) {
@@ -87,6 +93,62 @@ internal object ShelfJson {
         return out
     }
 
+    /** Matchora's live/schedule response: `{ "events": [...] }`. */
+    private fun parseEventFeed(body: String): List<Item>? {
+        val root = try {
+            JSONObject(body)
+        } catch (e: Exception) {
+            return null
+        }
+        if (root.has("subjects") || root.has("subject_collection_items")) {
+            val parsed = DoubanFilms.parseOne(body)
+            return parsed.map { Item(it.title, it.meta, it.image) }
+        }
+        val events = root.optJSONArray("events") ?: return null
+        val out = ArrayList<Item>(ShelfLimits.MAX_ITEMS)
+        for (i in 0 until events.length()) {
+            if (out.size >= ShelfLimits.MAX_ITEMS) break
+            val event = events.optJSONObject(i) ?: continue
+            val sport = field(event, "sport")
+            if (sport.isNotEmpty() && !sport.equals("Soccer", ignoreCase = true)) continue
+
+            val home = field(event, "home")
+            val away = field(event, "away")
+            val title = when {
+                home.isNotEmpty() && away.isNotEmpty() -> "$home vs $away"
+                home.isNotEmpty() -> home
+                else -> away
+            }.take(ShelfLimits.MAX_TITLE)
+            if (title.isEmpty()) continue
+
+            val meta = listOf(
+                field(event, "league"),
+                field(event, "score"),
+                statusLabel(event),
+            ).filter { it.isNotEmpty() }.joinToString(" · ").take(ShelfLimits.MAX_META)
+
+            val image = listOf("image", "thumbnail", "background_image")
+                .map { field(event, it) }
+                .firstOrNull { ShelfLimits.isHttpUrl(it) }
+                ?: if (out.size % 2 == 0) Shelf.FOOTBALL_ART else Shelf.FOOTBALL_ART_2
+            out.add(Item(title, meta, image))
+        }
+        return out
+    }
+
+    private fun statusLabel(event: JSONObject): String {
+        val minute = field(event, "minute")
+        if (minute.isNotEmpty()) return "$minute′"
+        return when (field(event, "status").uppercase()) {
+            "HT" -> "中场"
+            "FT" -> "完场"
+            "LIVE" -> "直播中"
+            "NS", "NOTSTARTED" -> "未开始"
+            "CANCELED" -> "已取消"
+            else -> field(event, "status")
+        }
+    }
+
     private fun field(obj: JSONObject, key: String): String {
         if (!obj.has(key) || obj.isNull(key)) return ""
         val value = obj.opt(key)
@@ -94,3 +156,4 @@ internal object ShelfJson {
         return value.toString().trim()
     }
 }
+

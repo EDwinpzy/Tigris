@@ -303,9 +303,29 @@ class ConfigReceiver : BroadcastReceiver() {
         if (i.hasExtra("own_icon")) prefs.ownIcon = i.getBooleanExtra("own_icon", true)
         if (i.hasExtra("intro_sound")) prefs.introSound = i.getBooleanExtra("intro_sound", true)
         if (i.hasExtra("wake_delay")) prefs.wakeDelay = i.getIntExtra("wake_delay", 5000)
+        if (i.hasExtra("voice_enabled")) prefs.voiceEnabled = i.getBooleanExtra("voice_enabled", prefs.voiceEnabled)
+        if (i.hasExtra("voice_accessibility")) {
+            prefs.voiceAccessibility = i.getBooleanExtra("voice_accessibility", false)
+            if (prefs.voiceAccessibility) VoiceAccessibility.ensure(c)
+        }
+        i.getStringExtra("voice_stt_provider")?.let { prefs.voiceSttProvider = it }
+        i.getStringExtra("voice_stt_url")?.let { prefs.voiceSttUrl = it }
+        i.getStringExtra("voice_stt_key")?.let { prefs.voiceSttKey = it }
+        i.getStringExtra("voice_stt_model")?.let { prefs.voiceSttModel = it }
+        i.getStringExtra("voice_stt_language")?.let { prefs.voiceSttLanguage = it }
+        i.getStringExtra("voice_llm_url")?.let { prefs.voiceLlmUrl = it }
+        i.getStringExtra("voice_llm_key")?.let { prefs.voiceLlmKey = it }
+        i.getStringExtra("voice_llm_model")?.let { prefs.voiceLlmModel = it }
+        i.getStringExtra("voice_system_prompt")?.let { prefs.voiceSystemPrompt = it }
+        i.getStringExtra("voice_tts_provider")?.let { prefs.voiceTtsProvider = it }
+        i.getStringExtra("voice_tts_url")?.let { prefs.voiceTtsUrl = it }
+        i.getStringExtra("voice_tts_key")?.let { prefs.voiceTtsKey = it }
+        i.getStringExtra("voice_tts_model")?.let { prefs.voiceTtsModel = it }
+        i.getStringExtra("voice_tts_voice")?.let { prefs.voiceTtsVoice = it }
+        i.getStringExtra("voice_test_text")?.let { VoiceAssistant.acceptTranscript(c, it) }
         Guard.ensure(c)
         resultData = "guard=${prefs.guard} keep_adb=${prefs.keepAdb} home_filter=${prefs.persistentHomeFilter} secure_settings=${Guard.hasSecureSettings(c)} " +
             "background=${prefs.background} cc_style=${prefs.ccStyle} focus_style=${prefs.focusStyle} clock_style=${prefs.clockStyle} clock_24=${prefs.clock24} " +
-            "intro=${prefs.intro} intro_source=${prefs.introSource} wake_delay=${prefs.wakeDelay} own_icon=${prefs.ownIcon} settings_bg=${prefs.settingsBg} low_end=${Device.isLowEnd(c)}"
+            "intro=${prefs.intro} intro_source=${prefs.introSource} wake_delay=${prefs.wakeDelay} own_icon=${prefs.ownIcon} settings_bg=${prefs.settingsBg} voice_enabled=${prefs.voiceEnabled} voice_accessibility=${prefs.voiceAccessibility} voice_stt=${prefs.voiceSttProvider} voice_tts=${prefs.voiceTtsProvider} llm_configured=${prefs.voiceLlmKey.isNotBlank()} low_end=${Device.isLowEnd(c)}"
     }
 }

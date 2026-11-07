@@ -58,6 +58,8 @@ dependencies {
     // android.jar stubs org.json in JVM unit tests. This jar is tests only.
     testImplementation("org.json:json:20240303")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
+    // Offline Mandarin recognition when the firmware exposes no Android RecognitionService.
+    implementation("com.alphacephei:vosk-android:0.3.47")
     implementation("androidx.palette:palette:1.0.0")
     implementation("dev.mobile:dadb:2.0.0")
     // Apple TV aerial screensaver.

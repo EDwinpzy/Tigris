@@ -77,6 +77,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
     private var weatherLoading = false
     private var lastWeatherAttempt = 0L
     private lateinit var clockText: TextView
+    private lateinit var icons: LinearLayout
     /** The large clock top left, with the date above it ([Prefs.CLOCK_LARGE]). */
     private lateinit var bigClock: LinearLayout
     private lateinit var bigDate: TextView
@@ -128,6 +129,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
     /** Top Shelf: content of the focused first-row dock app filling the screen above the dock. */
     private lateinit var shelf: FrameLayout
     private lateinit var shelfPics: FrameLayout
+    private lateinit var shelfEdgeFade: View
     private var shelfFront: ImageView? = null
     private lateinit var shelfSource: TextView
     private lateinit var shelfTitle: TextView
@@ -207,6 +209,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         super.onCreate(savedInstanceState)
         Tween.readScale(this)
         prefs = Prefs(this)
+        prefs.migrateFeaturedOrder()
         cols = prefs.dockColumns
         repo = AppRepo(this)
         buildViews()
@@ -400,7 +403,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         clockText = text(14f, weight = 600).apply {
             setShadowLayer(dp(5).toFloat(), 0f, dp(1).toFloat(), Color.argb(140, 0, 0, 0))
         }
-        val icons = LinearLayout(this).apply {
+        icons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
@@ -497,25 +500,15 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         })
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-                // Measured from the rows themselves: layouts and jumps (reloads, scrollToPosition)
-                // move the grid with dy = 0, so a running sum of dy drifts away from the truth.
-                scrollY = gridOffset() ?: (scrollY + dy)
-                val off = scrollY.toFloat()
-                // Keep the glass with the first row and sample the wallpaper at its current position.
-                val expansion = (off / (rowPitch * 0.7f)).coerceIn(0f, 1f)
-                dock.translationY = -off
-                icons.translationY = -off
-                weatherCard.alpha = 1f - expansion
-                // Off-screen controls must also leave remote-control focus navigation.
-                icons.visibility = if (off > 0f && off >= icons.bottom) View.INVISIBLE else View.VISIBLE
-                dock.alpha = 1f
-                frost.alpha = expansion
-                if (off > 0f) { dock.setImageDrawable(scrollGlass); scrollGlass.invalidateSelf() }
-                else dock.setImageDrawable(dockShown)
-                // The large clock gives way to the rows coming up under it.
-                if (!shelfShown) bigClock.alpha = 1f - expansion
+                syncGridOffset(dy)
             }
         })
+        // scrollToPosition() and data-set relayouts can move the rows without onScrolled(),
+        // leaving the dock and clock behind. Measure the laid-out row again before each frame.
+        grid.viewTreeObserver.addOnPreDrawListener {
+            syncGridOffset()
+            true
+        }
         scene.addView(grid, match())
         header.bringToFront()
         setContentView(root)
@@ -685,24 +678,31 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     private fun buildShelf(side: Int) {
         shelf = FrameLayout(this).apply { alpha = 0f; visibility = View.INVISIBLE }
-        shelfPics = FrameLayout(this)
+        shelfPics = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         shelf.addView(shelfPics, FrameLayout.LayoutParams(-1, -1))
+        shelfEdgeFade = View(this).apply {
+            background = PosterEdgeFadeDrawable()
+            visibility = View.INVISIBLE
+        }
+        shelf.addView(shelfEdgeFade, FrameLayout.LayoutParams(-1, -1))
         val shadow = { t: TextView -> t.setShadowLayer(dp(10).toFloat(), 0f, dp(1).toFloat(), Color.argb(150, 0, 0, 0)) }
         shelfSource = text(16f, Color.argb(200, 255, 255, 255), weight = 600).also(shadow)
-        shelfTitle = text(38f, weight = 700).apply {
-            maxLines = 2
+        shelfTitle = text(42f, weight = 700).apply {
+            maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setLineSpacing(0f, 1.08f)
+            setSingleLine(true)
+            setAutoSizeTextTypeUniformWithConfiguration(
+                20, 42, 1, android.util.TypedValue.COMPLEX_UNIT_SP,
+            )
         }.also(shadow)
         shelfMeta = text(17f, Color.argb(210, 255, 255, 255), weight = 500).apply { maxLines = 1 }.also(shadow)
         shelfInfo = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(shelfSource)
-            addView(shelfTitle, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+            addView(shelfTitle)
             addView(shelfMeta, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10) })
         }
         val above = sh - dockRect.top + dp(30)
-        shelf.addView(shelfInfo, FrameLayout.LayoutParams((sw * 0.56f).toInt(), -2, Gravity.BOTTOM or Gravity.START).apply {
+        shelf.addView(shelfInfo, FrameLayout.LayoutParams((sw * 0.70f).toInt(), -2, Gravity.BOTTOM or Gravity.START).apply {
             leftMargin = side; bottomMargin = above
         })
         shelfDots = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -741,12 +741,23 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         shelfIndex = i
         // The new picture fades in over the old one, settling from a slight zoom.
         val old = shelfFront
-        val pic = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; setImageBitmap(b) }
+        val footballPoster = item.image.contains("ppvservices.st")
+        shelfPics.background = if (footballPoster) PosterBackdropDrawable(b) else null
+        shelfEdgeFade.visibility = if (footballPoster) View.VISIBLE else View.INVISIBLE
+        val lift = if (footballPoster) dp(90).toFloat() else 0f
+        val startScale = if (footballPoster) 0.88f else 1.04f
+        val endScale = if (footballPoster) 0.84f else 1f
+        val pic = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageBitmap(b)
+            translationY = -lift
+        }
         shelfPics.addView(pic, FrameLayout.LayoutParams(-1, -1))
         shelfFront = pic
         pic.alpha = 0f
-        pic.scaleX = 1.04f; pic.scaleY = 1.04f
-        pic.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(if (old == null) 0 else 700).setInterpolator(Motion.ease)
+        pic.scaleX = startScale; pic.scaleY = startScale
+        pic.animate().alpha(1f).scaleX(endScale).scaleY(endScale).translationY(-lift)
+            .setDuration(if (old == null) 0 else 700).setInterpolator(Motion.ease)
             .withEndAction {
                 if (old != null) shelfPics.removeView(old)
                 if (old != null) control.refreshGlass()
@@ -754,6 +765,12 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         shelfInfo.animate().cancel()
         shelfInfo.alpha = 0f
         shelfInfo.translationY = dp(10).toFloat()
+        shelfTitle.maxLines = 1
+        shelfTitle.setSingleLine(true)
+        shelfTitle.ellipsize = android.text.TextUtils.TruncateAt.END
+        shelfTitle.setAutoSizeTextTypeUniformWithConfiguration(
+            18, 38, 1, android.util.TypedValue.COMPLEX_UNIT_SP,
+        )
         shelfTitle.text = item.title
         shelfMeta.text = item.meta
         shelfInfo.animate().alpha(1f).translationY(0f).setDuration(450).setStartDelay(150).start()
@@ -883,6 +900,32 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         val child = grid.getChildAt(0) ?: return null
         val p = grid.getChildAdapterPosition(child).takeIf { it >= 0 } ?: return null
         return firstRowY + (p / cols) * rowPitch - lm.getDecoratedTop(child)
+    }
+
+    /**
+     * Keeps the glass dock and status row on the first grid row. Derived from the laid-out tiles
+     * instead of scroll callbacks: a reload or scrollToPosition() can move the grid silently.
+     */
+    private fun syncGridOffset(dy: Int = 0) {
+        // Measured from the rows themselves: layouts and jumps move the grid with dy = 0,
+        // so a running sum of dy drifts away from the truth.
+        val off = gridOffset() ?: (scrollY + dy)
+        if (off == scrollY) return
+        scrollY = off
+        val offset = off.toFloat()
+        // Keep the glass with the first row and sample the wallpaper at its current position.
+        val expansion = (offset / (rowPitch * 0.7f)).coerceIn(0f, 1f)
+        dock.translationY = -offset
+        icons.translationY = -offset
+        weatherCard.alpha = 1f - expansion
+        // Off-screen controls must also leave remote-control focus navigation.
+        icons.visibility = if (offset > 0f && offset >= icons.bottom) View.INVISIBLE else View.VISIBLE
+        dock.alpha = 1f
+        frost.alpha = expansion
+        if (offset > 0f) { dock.setImageDrawable(scrollGlass); scrollGlass.invalidateSelf() }
+        else dock.setImageDrawable(dockShown)
+        // The large clock gives way to the rows coming up under it.
+        if (!shelfShown) bigClock.alpha = 1f - expansion
     }
 
     private fun focusAt(pos: Int) {
@@ -1177,6 +1220,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         restartIdle()
+        if (VoiceAssistant.handleBack(this, event.keyCode, event.action)) return true
         welcome?.let { return it.key(event) }
         // Any key skips the intro to its closing zoom; nothing behind it reacts meanwhile.
         intro?.let { if (event.action == KeyEvent.ACTION_UP) it.skip(); return true }
@@ -1253,6 +1297,11 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         if (shelfShown && !control.isOpen) resumeShelfRotation()
     }
 
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        VoiceAssistant.onPermissionResult(this, requestCode, grantResults)
+    }
     override fun onPause() {
         HomeGuardService.onHomePaused()
         resumed = false

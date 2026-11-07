@@ -243,6 +243,16 @@ class HomeGuardService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        val voiceKey = event.scanCode == 192 ||
+            event.keyCode == KeyEvent.KEYCODE_VOICE_ASSIST ||
+            event.keyCode == KeyEvent.KEYCODE_ASSIST
+        if (voiceKey) {
+            when (event.action) {
+                KeyEvent.ACTION_DOWN -> if (event.repeatCount == 0) VoiceAssistant.beginFromRemoteKey(this)
+                KeyEvent.ACTION_UP -> VoiceAssistant.stopFromRemoteKey()
+            }
+            return true
+        }
         if (!Guard.guardOn(this)) return false
         if (!HomeKeyCodes.isHome(event.keyCode, Guard.isXiaomi())) return false
         if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
@@ -259,6 +269,13 @@ class HomeGuardService : AccessibilityService() {
         if (!Guard.guardOn(this) || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         val cls = event.className?.toString() ?: return
+        // JMGO's receiver shares the system UID and cannot be disabled with ordinary ADB.
+        // Dismiss its old voice window only when Tigris is not using the vendor ASR.
+        if (pkg == "com.jmgo.ai.voice" && VoiceAssistant.isSessionActive() && !VoiceAssistant.usesVendorAsr()) {
+            handler.postDelayed({
+                if (VoiceAssistant.isSessionActive()) performGlobalAction(GLOBAL_ACTION_BACK)
+            }, 180L)
+        }
         // Overlays are not what is in front. TCL's voice assistant at boot must not cancel a takeover.
         if (!isActivity(pkg, cls)) return
         val before = lastWindow?.first

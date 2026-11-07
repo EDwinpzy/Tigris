@@ -8,6 +8,10 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Top Shelf content. Android TV's own channel API is empty on the TVs this
@@ -21,15 +25,25 @@ import java.net.URL
  */
 object Shelf {
     data class Item(val title: String, val meta: String, val image: String)
-    data class Source(val name: String, val fetch: () -> List<Item>)
+    data class Source(val name: String, val fetch: () -> List<Item>, val ttlMs: Long = TTL)
 
     /** One user-entered feed, shown when [pkg] is focused in the dock. */
     data class Custom(val pkg: String, val url: String)
 
     internal enum class ShelfPick { CUSTOM, BUILTIN, NONE }
 
+    internal const val FOOTBALL_ART = "asset:football"
+    internal const val FOOTBALL_ART_2 = "asset:football:2"
+    internal const val FOOTBALL_PKG = "com.qiubo.optimaltv.public"
+    internal const val DOUBAN_PKG = "com.dongpiandi"
+
     private const val UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
     private const val TTL = 15 * 60_000L
+    private const val FOOTBALL_TTL = 60_000L
+    private const val DOUBAN_TTL = 30 * 60_000L
+    private const val DOUBAN_MOVIES = "https://movie.douban.com/j/search_subjects?type=movie&tag=%E7%83%AD%E9%97%A8&page_limit=20&page_start=0"
+    private const val DOUBAN_TV = "https://movie.douban.com/j/search_subjects?type=tv&tag=%E7%83%AD%E9%97%A8&page_limit=20&page_start=0"
+    private const val ESPORTEX_FOOTBALL = "https://api.esportex.site/api/streams"
     /** Built-in responses are small; the cap only stops a runaway body. */
     private const val BUILTIN_JSON_BYTES = 2 * 1024 * 1024
 
@@ -38,22 +52,33 @@ object Shelf {
         "com.xiaodianshi.tv.yst" to "bilibili",
         "com.tutu.myblbl" to "bilibili",
         "com.douyu.xl.douyutv" to "douyu",
+        FOOTBALL_PKG to "football",
+        DOUBAN_PKG to "douban",
     )
 
     private data class Cached(val at: Long, val name: String, val items: List<Item>)
 
     private val sources get() = builtInPackages.mapValues { (_, kind) ->
-        if (kind == "bilibili") Source(I18n.text(R.string.i18n_shelf_001), ::bilibili)
-        else Source(I18n.text(R.string.i18n_shelf_002), ::douyu)
+        when (kind) {
+            "bilibili" -> Source(I18n.text(R.string.i18n_shelf_001), ::bilibili)
+            "football" -> Source(I18n.text(R.string.i18n_shelf_007), ::football, FOOTBALL_TTL)
+            "douban" -> Source(I18n.text(R.string.i18n_shelf_008), ::douban, DOUBAN_TTL)
+            else -> Source(I18n.text(R.string.i18n_shelf_002), ::douyu)
+        }
     }
+
     private val cache = HashMap<String, Cached>()
     private val shownName = HashMap<String, String>()
+    private val footballTitleCache = HashMap<String, String>()
 
     /**
      * Custom wins only when the linked package matches and the body was usable.
      * Otherwise a known package keeps its built-in feed.
      */
     internal fun pickShelf(pkg: String, custom: Custom?, customOk: Boolean): ShelfPick {
+        // The football tile has a built-in Chinese live feed; an older custom URL
+        // must not silently replace it with English data.
+        if (pkg == FOOTBALL_PKG || pkg == DOUBAN_PKG) return ShelfPick.BUILTIN
         val linked = custom?.pkg?.trim().orEmpty()
         val url = custom?.url?.trim().orEmpty()
         if (linked == pkg && ShelfLimits.isHttpUrl(url) && customOk) return ShelfPick.CUSTOM
@@ -86,7 +111,7 @@ object Shelf {
             }
         }
         val src = sources[pkg] ?: return emptyList()
-        readCache(pkg, pkg)?.let { return it }
+        readCache(pkg, pkg, src.ttlMs)?.let { return it }
         val list = try {
             src.fetch()
         } catch (e: Exception) {
@@ -99,6 +124,12 @@ object Shelf {
 
     /** Downloads (or reads from the disk cache) an item's picture. */
     fun image(ctx: Context, url: String): Bitmap? {
+        if (url == FOOTBALL_ART || url == FOOTBALL_ART_2) {
+            val art = if (url == FOOTBALL_ART_2) R.drawable.football_shelf_2 else R.drawable.football_shelf
+            return BitmapFactory.decodeResource(ctx.resources, art)
+                ?.let(::darken)
+                ?.also { it.prepareToDraw() }
+        }
         if (!ShelfLimits.isHttpUrl(url)) return null
         val dir = File(ctx.cacheDir, "shelf").apply { mkdirs() }
         val f = File(dir, Integer.toHexString(url.hashCode()) + ".jpg")
@@ -126,9 +157,9 @@ object Shelf {
         return parsed.map { Item(it.title, it.meta, it.image) }
     }
 
-    private fun readCache(key: String, pkg: String): List<Item>? = synchronized(cache) {
+    private fun readCache(key: String, pkg: String, ttlMs: Long = TTL): List<Item>? = synchronized(cache) {
         val hit = cache[key] ?: return null
-        if (System.currentTimeMillis() - hit.at >= TTL) return null
+        if (System.currentTimeMillis() - hit.at >= ttlMs) return null
         shownName[pkg] = hit.name
         hit.items
     }
@@ -192,6 +223,105 @@ object Shelf {
         }
     }
 
+    private fun football(): List<Item> {
+        val body = get(ESPORTEX_FOOTBALL, BUILTIN_JSON_BYTES).decodeToString()
+        return translateFootballTitles(EsportexFootball.items(body))
+    }
+
+    /** MyMemory supports a small batch; cache the result for this process so refreshes do not re-request. */
+    private fun translateFootballTitles(items: List<Item>): List<Item> {
+        val missing = items.map { it.title }
+            .filter { it.any { ch -> ch in '\u4e00'..'\u9fff' }.not() }
+            .distinct()
+        synchronized(footballTitleCache) {
+            val todo = missing.filter { it !in footballTitleCache }
+            if (todo.isNotEmpty()) {
+                val query = todo.joinToString("\n")
+                try {
+                    val encoded = URLEncoder.encode(query, "UTF-8")
+                    val url = "https://api.mymemory.translated.net/get?q=$encoded&langpair=en%7Czh-CN"
+                    val json = JSONObject(get(url, 512 * 1024).decodeToString())
+                    val translated = json.getJSONObject("responseData").optString("translatedText")
+                    val lines = translated.split('\n')
+                    if (lines.size == todo.size) {
+                        todo.zip(lines).forEach { (source, target) ->
+                            val text = cleanTranslation(target)
+                            if (text.isNotEmpty()) footballTitleCache[source] = text
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w("Shelf", "football title translation failed", e)
+                }
+            }
+            return items.map { item ->
+                val title = footballTitleCache[item.title] ?: item.title
+                item.copy(title = title.take(ShelfLimits.MAX_TITLE))
+            }
+        }
+    }
+
+    private fun cleanTranslation(raw: String): String {
+        return raw.replace("&amp;", "&")
+            .replace(Regex("""\s*vs\s*""", RegexOption.IGNORE_CASE), " VS ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+
+    private fun douban(): List<Item> {
+        val movies = DoubanFilms.entries(get(DOUBAN_MOVIES, BUILTIN_JSON_BYTES).decodeToString(), "电影")
+        val tv = DoubanFilms.entries(get(DOUBAN_TV, BUILTIN_JSON_BYTES).decodeToString(), "剧集")
+        val chosen = ArrayList<DoubanFilms.Entry>()
+        for (i in 0 until maxOf(movies.size, tv.size)) {
+            if (chosen.size >= 16) break
+            movies.getOrNull(i)?.let { chosen += it }
+            if (chosen.size >= 16) break
+            tv.getOrNull(i)?.let { chosen += it }
+        }
+        val pool = Executors.newFixedThreadPool(4)
+        return try {
+            val futures = chosen.map { entry ->
+                pool.submit(Callable { entry to doubanLandscape(entry) })
+            }
+            futures.mapNotNull { future ->
+                runCatching { future.get(10, TimeUnit.SECONDS) }.getOrNull()
+                    ?.let { (entry, image) -> image?.let { Item(entry.title, entry.meta, it) } }
+            }.take(ShelfLimits.MAX_ITEMS)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    /** Douban trailer covers are 16:9; fall back to its landscape production stills. */
+    private fun doubanLandscape(entry: DoubanFilms.Entry): String? {
+        val type = if (entry.kind == "剧集") "tv" else "movie"
+        val base = "https://m.douban.com/rexxar/api/v2/$type/${entry.id}"
+        val detail = JSONObject(get(base, BUILTIN_JSON_BYTES).decodeToString())
+        val trailers = detail.optJSONArray("trailers")
+        if (trailers != null) {
+            for (i in 0 until trailers.length()) {
+                val url = trailers.optJSONObject(i)?.optString("cover_url").orEmpty().trim()
+                if (ShelfLimits.isHttpUrl(url)) return doubanImage(url)
+            }
+        }
+        val photos = JSONObject(get("$base/photos?start=0&count=6", BUILTIN_JSON_BYTES).decodeToString())
+            .optJSONArray("photos") ?: return null
+        for (i in 0 until photos.length()) {
+            val image = photos.optJSONObject(i)?.optJSONObject("image") ?: continue
+            val large = image.optJSONObject("large") ?: continue
+            val width = large.optInt("width")
+            val height = large.optInt("height")
+            val url = large.optString("url").trim()
+            if (width > 0 && height > 0 && width >= height * 1.2 && ShelfLimits.isHttpUrl(url)) {
+                return doubanImage(url)
+            }
+        }
+        return null
+    }
+
+    private fun doubanImage(raw: String): String = raw
+        .replace("http://", "https://")
+        .replace(Regex("""https://img\d+\.doubanio\.com/"""), "https://img2.doubanio.com/")
+
     private fun douyu(): List<Item> {
         val list = JSONObject(get("https://www.douyu.com/japi/weblist/apinc/allpage/6/1", BUILTIN_JSON_BYTES).decodeToString())
             .getJSONObject("data").getJSONArray("rl")
@@ -230,6 +360,11 @@ object Shelf {
         c.setRequestProperty("User-Agent", UA)
         // B站's API answers with an empty body when sent a Referer from outside its pages.
         if ("douyu" in url) c.setRequestProperty("Referer", "https://www.douyu.com/")
+        if ("7m.com.cn" in url) c.setRequestProperty("Referer", "https://www.7m.com.cn/")
+        if ("douban.com" in url || "doubanio.com" in url) {
+            c.setRequestProperty("Referer", "https://movie.douban.com/")
+        }
+        if ("ppvservices.st" in url) c.setRequestProperty("Referer", "https://api.esportex.site/")
         try {
             if (c.responseCode != 200) throw java.io.IOException("HTTP ${c.responseCode}")
             val advertised = c.contentLengthLong
@@ -240,3 +375,5 @@ object Shelf {
         }
     }
 }
+
+

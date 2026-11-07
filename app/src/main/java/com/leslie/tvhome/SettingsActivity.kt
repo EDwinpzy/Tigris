@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.text.method.PasswordTransformationMethod
 import java.util.concurrent.Executors
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -97,7 +98,7 @@ class SettingsActivity : Activity() {
     /** The main-page row that opened the current sub-page, focused again on the way back. */
     private var opener = 0
 
-    private enum class Page { MAIN, KEEP, HIDDEN, REMOVED, SHELF_APP }
+    private enum class Page { MAIN, KEEP, HIDDEN, REMOVED, SHELF_APP, VOICE }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -204,6 +205,7 @@ class SettingsActivity : Activity() {
             }
             Page.REMOVED -> removedApps()
             Page.SHELF_APP -> shelfAppPicker()
+            Page.VOICE -> voiceSettings()
         }
         list.post {
             val target = list.getChildAt(focusIndex.coerceIn(0, maxOf(list.childCount - 1, 0)))
@@ -383,6 +385,10 @@ class SettingsActivity : Activity() {
             show(Page.MAIN, opener)
         }
 
+
+        section(I18n.text(R.string.voice_section))
+        row(I18n.text(R.string.voice_settings_title), I18n.text(R.string.voice_settings_help),
+            { voiceSummary() }, chevron = true) { show(Page.VOICE) }
         // Weather is a self-contained optional card. No network traffic until opt-in.
         section(I18n.text(R.string.weather_settings))
         row(I18n.text(R.string.weather_settings), I18n.text(R.string.weather_settings_help),
@@ -806,6 +812,185 @@ class SettingsActivity : Activity() {
             })
     }
 
+    private fun voiceSettings() {
+        heading.text = I18n.text(R.string.voice_settings_title)
+        about.text = I18n.text(R.string.voice_settings_help)
+        row(I18n.text(R.string.voice_enabled), I18n.text(R.string.voice_enabled_help),
+            { if (prefs.voiceEnabled) I18n.text(R.string.voice_on) else I18n.text(R.string.voice_off) },
+            checked = { prefs.voiceEnabled }) {
+            prefs.voiceEnabled = !prefs.voiceEnabled
+        }
+
+        section(I18n.text(R.string.voice_stt_provider))
+        row(I18n.text(R.string.voice_stt_provider), I18n.text(R.string.voice_stt_provider_help),
+            { voiceProviderLabel(prefs.voiceSttProvider) }) {
+            val values = listOf(Prefs.AUTO, Prefs.VOICE_STT_SYSTEM, Prefs.VOICE_STT_OFFLINE, Prefs.VOICE_STT_CLOUD)
+            prefs.voiceSttProvider = values[(values.indexOf(prefs.voiceSttProvider).coerceAtLeast(0) + 1) % values.size]
+        }
+        row(I18n.text(R.string.voice_stt_url), I18n.text(R.string.voice_stt_url_help),
+            { voiceUrlLabel(prefs.voiceSttUrl) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_stt_url, R.string.voice_stt_url_help, prefs.voiceSttUrl, validateUrl = true) {
+                prefs.voiceSttUrl = it
+                v.text = voiceUrlLabel(it)
+            }
+        }
+        row(I18n.text(R.string.voice_stt_key), I18n.text(R.string.voice_stt_key_help),
+            { if (prefs.voiceSttKey.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_stt_key, R.string.voice_stt_key_help, prefs.voiceSttKey, secret = true) {
+                prefs.voiceSttKey = it
+                v.text = if (it.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured)
+            }
+        }
+        row(I18n.text(R.string.voice_stt_model), I18n.text(R.string.voice_stt_model_help),
+            { prefs.voiceSttModel }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_stt_model, R.string.voice_stt_model_help, prefs.voiceSttModel) {
+                prefs.voiceSttModel = it
+                v.text = it
+            }
+        }
+        row(I18n.text(R.string.voice_stt_language), I18n.text(R.string.voice_stt_language_help),
+            { prefs.voiceSttLanguage }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_stt_language, R.string.voice_stt_language_help, prefs.voiceSttLanguage) {
+                prefs.voiceSttLanguage = it
+                v.text = it
+            }
+        }
+
+        section(I18n.text(R.string.voice_llm_model))
+        row(I18n.text(R.string.voice_llm_url), I18n.text(R.string.voice_llm_url_help),
+            { voiceUrlLabel(prefs.voiceLlmUrl) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_llm_url, R.string.voice_llm_url_help, prefs.voiceLlmUrl, validateUrl = true) {
+                prefs.voiceLlmUrl = it
+                v.text = voiceUrlLabel(it)
+            }
+        }
+        row(I18n.text(R.string.voice_llm_key), I18n.text(R.string.voice_llm_key_help),
+            { if (prefs.voiceLlmKey.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_llm_key, R.string.voice_llm_key_help, prefs.voiceLlmKey, secret = true) {
+                prefs.voiceLlmKey = it
+                v.text = if (it.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured)
+            }
+        }
+        row(I18n.text(R.string.voice_llm_model), I18n.text(R.string.voice_llm_model_help),
+            { prefs.voiceLlmModel }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_llm_model, R.string.voice_llm_model_help, prefs.voiceLlmModel) {
+                prefs.voiceLlmModel = it
+                v.text = it
+            }
+        }
+        row(I18n.text(R.string.voice_system_prompt), I18n.text(R.string.voice_system_prompt_help),
+            { if (prefs.voiceSystemPrompt.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_system_prompt, R.string.voice_system_prompt_help, prefs.voiceSystemPrompt, multiline = true) {
+                prefs.voiceSystemPrompt = it
+                v.text = if (it.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured)
+            }
+        }
+
+        section(I18n.text(R.string.voice_tts_provider))
+        row(I18n.text(R.string.voice_tts_provider), I18n.text(R.string.voice_tts_provider_help),
+            { voiceProviderLabel(prefs.voiceTtsProvider) }) {
+            val values = listOf(Prefs.AUTO, Prefs.VOICE_TTS_SYSTEM, Prefs.VOICE_TTS_JMGO, Prefs.VOICE_TTS_CLOUD)
+            prefs.voiceTtsProvider = values[(values.indexOf(prefs.voiceTtsProvider).coerceAtLeast(0) + 1) % values.size]
+        }
+        row(I18n.text(R.string.voice_tts_url), I18n.text(R.string.voice_tts_url_help),
+            { voiceUrlLabel(prefs.voiceTtsUrl) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_tts_url, R.string.voice_tts_url_help, prefs.voiceTtsUrl, validateUrl = true) {
+                prefs.voiceTtsUrl = it
+                v.text = voiceUrlLabel(it)
+            }
+        }
+        row(I18n.text(R.string.voice_tts_key), I18n.text(R.string.voice_tts_key_help),
+            { if (prefs.voiceTtsKey.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured) }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_tts_key, R.string.voice_tts_key_help, prefs.voiceTtsKey, secret = true) {
+                prefs.voiceTtsKey = it
+                v.text = if (it.isBlank()) I18n.text(R.string.voice_not_configured) else I18n.text(R.string.voice_configured)
+            }
+        }
+        row(I18n.text(R.string.voice_tts_model), I18n.text(R.string.voice_tts_model_help),
+            { prefs.voiceTtsModel }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_tts_model, R.string.voice_tts_model_help, prefs.voiceTtsModel) {
+                prefs.voiceTtsModel = it
+                v.text = it
+            }
+        }
+        row(I18n.text(R.string.voice_tts_voice), I18n.text(R.string.voice_tts_voice_help),
+            { prefs.voiceTtsVoice }, chevron = true) { v ->
+            editVoiceValue(R.string.voice_tts_voice, R.string.voice_tts_voice_help, prefs.voiceTtsVoice) {
+                prefs.voiceTtsVoice = it
+                v.text = it
+            }
+        }
+    }
+
+    private fun voiceSummary(): String {
+        val stt = when (prefs.voiceSttProvider) {
+            Prefs.VOICE_STT_SYSTEM -> I18n.text(R.string.voice_system)
+            Prefs.VOICE_STT_OFFLINE -> I18n.text(R.string.voice_offline)
+            Prefs.VOICE_STT_CLOUD -> I18n.text(R.string.voice_cloud)
+            else -> I18n.text(R.string.voice_auto)
+        }
+        val tts = when (prefs.voiceTtsProvider) {
+            Prefs.VOICE_TTS_SYSTEM -> I18n.text(R.string.voice_system)
+            Prefs.VOICE_TTS_JMGO -> I18n.text(R.string.voice_jmgo)
+            Prefs.VOICE_TTS_CLOUD -> I18n.text(R.string.voice_cloud)
+            else -> I18n.text(R.string.voice_auto)
+        }
+        return I18n.text(R.string.voice_settings_summary, stt, tts)
+    }
+
+    private fun voiceProviderLabel(value: String): String = when (value) {
+        Prefs.VOICE_STT_SYSTEM, Prefs.VOICE_TTS_SYSTEM -> I18n.text(R.string.voice_system)
+        Prefs.VOICE_STT_OFFLINE -> I18n.text(R.string.voice_offline)
+        Prefs.VOICE_STT_CLOUD, Prefs.VOICE_TTS_CLOUD -> I18n.text(R.string.voice_cloud)
+        Prefs.VOICE_TTS_JMGO -> I18n.text(R.string.voice_jmgo)
+        else -> I18n.text(R.string.voice_auto)
+    }
+
+    private fun voiceUrlLabel(value: String): String {
+        if (value.isBlank()) return I18n.text(R.string.voice_not_configured)
+        return runCatching { java.net.URI(value.trim()).host }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: I18n.text(R.string.voice_configured)
+    }
+
+    private fun editVoiceValue(title: Int, description: Int, current: String,
+                               secret: Boolean = false, multiline: Boolean = false,
+                               validateUrl: Boolean = false, onSave: (String) -> Unit) {
+        val input = EditText(this).apply {
+            isSingleLine = !multiline
+            minLines = if (multiline) 3 else 1
+            isFocusable = true
+            isFocusableInTouchMode = true
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setHintTextColor(IDLE_VALUE)
+            background = rounded(Color.argb(45, 255, 255, 255), dp(12).toFloat())
+            setText(current)
+            setSelection(text.length)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            minHeight = dp(if (multiline) 96 else 48)
+            if (secret) {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                transformationMethod = PasswordTransformationMethod.getInstance()
+            } else if (multiline) {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            } else {
+                inputType = InputType.TYPE_CLASS_TEXT
+            }
+        }
+        dialog(I18n.text(title), I18n.text(description), body = input,
+            primary = I18n.text(R.string.voice_save), confirm = {
+                val raw = input.text.toString().trim()
+                if (validateUrl && raw.isNotBlank() && !ShelfLimits.isHttpUrl(raw)) {
+                    input.error = I18n.text(R.string.voice_invalid_url)
+                    input.requestFocus()
+                    false
+                } else {
+                    onSave(raw)
+                    true
+                }
+            })
+        input.post { input.requestFocus() }
+    }
     private fun section(title: String) {
         val first = list.childCount == 0
         list.addView(text(13f, Color.argb(185,255,255,255), weight = 500).apply { text = title },
@@ -947,7 +1132,13 @@ class SettingsActivity : Activity() {
     /** On Android TV the screensaver starts after the "screen off" timeout. */
     private fun idleMinutes() = Settings.System.getInt(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT, 600_000) / 60_000
 
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        VoiceAssistant.onPermissionResult(this, requestCode, grantResults)
+    }
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (VoiceAssistant.handleBack(this, keyCode, event.action)) return true
         if (keyCode == KeyEvent.KEYCODE_BACK && page != Page.MAIN) {
             show(Page.MAIN, opener)
             return true
@@ -955,6 +1146,8 @@ class SettingsActivity : Activity() {
         return super.onKeyUp(keyCode, event)
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean =
-        if (keyCode == KeyEvent.KEYCODE_BACK && page != Page.MAIN) true else super.onKeyDown(keyCode, event)
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (VoiceAssistant.handleBack(this, keyCode, event.action)) return true
+        return if (keyCode == KeyEvent.KEYCODE_BACK && page != Page.MAIN) true else super.onKeyDown(keyCode, event)
+    }
 }

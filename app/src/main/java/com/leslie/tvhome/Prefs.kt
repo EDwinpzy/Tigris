@@ -49,6 +49,18 @@ class Prefs(ctx: Context) {
         get() = sp.getStringSet("hidden", emptySet())!!.toSet()
         set(v) = sp.edit().putStringSet("hidden", v).apply()
 
+    /** Put the two built-in media shelves in the visible dock row once after upgrade. */
+    fun migrateFeaturedOrder() {
+        if (sp.getBoolean("featured_order_v1", false)) return
+        val saved = sp.getString("order", "").orEmpty().split(',').filter { it.isNotEmpty() }
+        if (saved.isNotEmpty()) {
+            val featured = listOf("com.qiubo.optimaltv.public", "com.dongpiandi")
+            val reordered = (featured + saved.filterNot { it in featured }).distinct()
+            sp.edit().putString("order", reordered.joinToString(",")).apply()
+        }
+        sp.edit().putBoolean("featured_order_v1", true).apply()
+    }
+
     /** Packages that memory cleanup never stops (casting receivers etc.). */
     var keep: Set<String>
         get() {
@@ -279,11 +291,92 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("welcome_completed", false)
         set(v) = sp.edit().putBoolean("welcome_completed", v).apply()
 
+    /** Enables Tigris's accessibility key filter for the JMGO remote's private voice scan code. */
+    var voiceAccessibility: Boolean
+        get() = sp.getBoolean("voice_accessibility", false)
+        set(v) = sp.edit().putBoolean("voice_accessibility", v).apply()
+    /** Remote voice: dictation in an input, otherwise a configurable assistant. */
+    var voiceEnabled: Boolean
+        get() = sp.getBoolean("voice_enabled", true)
+        set(v) = sp.edit().putBoolean("voice_enabled", v).apply()
+
+    /** auto, system or cloud for speech recognition. */
+    var voiceSttProvider: String
+        get() = sp.getString("voice_stt_provider", AUTO)!!
+        set(v) = sp.edit().putString("voice_stt_provider", v).apply()
+
+    var voiceSttUrl: String
+        get() = sp.getString("voice_stt_url", VOICE_STT_URL_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_stt_url", v).apply()
+
+    var voiceSttKey: String
+        get() = sp.getString("voice_stt_key", "")!!
+        set(v) = sp.edit().putString("voice_stt_key", v).apply()
+
+    var voiceSttModel: String
+        get() = sp.getString("voice_stt_model", VOICE_STT_MODEL_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_stt_model", v).apply()
+
+    var voiceSttLanguage: String
+        get() = sp.getString("voice_stt_language", "zh-CN")!!
+        set(v) = sp.edit().putString("voice_stt_language", v).apply()
+
+    /** OpenAI-compatible chat-completions endpoint. */
+    var voiceLlmUrl: String
+        get() = sp.getString("voice_llm_url", VOICE_LLM_URL_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_llm_url", v).apply()
+
+    var voiceLlmKey: String
+        get() = sp.getString("voice_llm_key", "")!!
+        set(v) = sp.edit().putString("voice_llm_key", v).apply()
+
+    var voiceLlmModel: String
+        get() = sp.getString("voice_llm_model", VOICE_LLM_MODEL_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_llm_model", v).apply()
+
+    var voiceSystemPrompt: String
+        get() = sp.getString("voice_system_prompt", VOICE_SYSTEM_PROMPT_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_system_prompt", v).apply()
+
+    /** auto, system, jmgo or cloud for spoken answers. */
+    var voiceTtsProvider: String
+        get() = sp.getString("voice_tts_provider", AUTO)!!
+        set(v) = sp.edit().putString("voice_tts_provider", v).apply()
+
+    var voiceTtsUrl: String
+        get() = sp.getString("voice_tts_url", VOICE_TTS_URL_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_tts_url", v).apply()
+
+    var voiceTtsKey: String
+        get() = sp.getString("voice_tts_key", "")!!
+        set(v) = sp.edit().putString("voice_tts_key", v).apply()
+
+    var voiceTtsModel: String
+        get() = sp.getString("voice_tts_model", VOICE_TTS_MODEL_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_tts_model", v).apply()
+
+    var voiceTtsVoice: String
+        get() = sp.getString("voice_tts_voice", VOICE_TTS_VOICE_DEFAULT)!!
+        set(v) = sp.edit().putString("voice_tts_voice", v).apply()
     companion object {
         const val SAVER_PHOTOS = "photos"
         const val SAVER_AERIAL = "aerial"
 
         const val AUTO = "auto"
+        const val VOICE_STT_SYSTEM = "system"
+        const val VOICE_STT_OFFLINE = "offline"
+        const val VOICE_STT_CLOUD = "cloud"
+        const val VOICE_TTS_SYSTEM = "system"
+        const val VOICE_TTS_JMGO = "jmgo"
+        const val VOICE_TTS_CLOUD = "cloud"
+        const val VOICE_STT_URL_DEFAULT = "https://api.openai.com/v1/audio/transcriptions"
+        const val VOICE_STT_MODEL_DEFAULT = "whisper-1"
+        const val VOICE_LLM_URL_DEFAULT = "https://api.openai.com/v1/chat/completions"
+        const val VOICE_LLM_MODEL_DEFAULT = "gpt-4o-mini"
+        const val VOICE_SYSTEM_PROMPT_DEFAULT = "你是一个中文电视语音助手。回答简洁、准确，通常控制在三句话以内。"
+        const val VOICE_TTS_URL_DEFAULT = "https://api.openai.com/v1/audio/speech"
+        const val VOICE_TTS_MODEL_DEFAULT = "tts-1"
+        const val VOICE_TTS_VOICE_DEFAULT = "alloy"
         const val CLOCK_CORNER = "corner"
         const val CLOCK_LARGE = "large"
         const val CLOCK_OFF = "off"
@@ -297,10 +390,13 @@ class Prefs(ctx: Context) {
         const val INTRO_VIDEO = "video"
         const val INTRO_WORDMARK = "wordmark"
 
+
         val DEFAULT_KEEP = setOf(
             "com.dangbei.screencast",
             "com.weekd.miracastreceiver",
             "com.xiaodianshi.tv.yst",
+            "com.qiubo.optimaltv.public",
+            "com.dongpiandi",
             "dev.vodik7.atvtoolsserver",
         )
 
@@ -310,6 +406,9 @@ class Prefs(ctx: Context) {
         /** Initial grid order on first run; everything else follows alphabetically. */
         val DEFAULT_ORDER = listOf(
             "com.xiaodianshi.tv.yst",
+            "com.qiubo.optimaltv.public",
+            "com.dongpiandi",
+            "com.weekd.miracastreceiver",
             "com.ktcp.video",
             "com.starcor.mango",
             "com.liskovsoft.smarttubetv.beta",

@@ -125,6 +125,29 @@ class ShelfJsonTest {
             Shelf.builtInPackages["com.tutu.myblbl"],
         )
         assertEquals("douyu", Shelf.builtInPackages["com.douyu.xl.douyutv"])
+        assertEquals("football", Shelf.builtInPackages[Shelf.FOOTBALL_PKG])
+        assertEquals("douban", Shelf.builtInPackages[Shelf.DOUBAN_PKG])
+        val oldFootballCustom = Shelf.Custom(Shelf.FOOTBALL_PKG, "https://example.com/old-football-feed")
+        assertEquals(Shelf.ShelfPick.BUILTIN, Shelf.pickShelf(Shelf.FOOTBALL_PKG, null, customOk = true))
+        assertEquals(Shelf.ShelfPick.BUILTIN, Shelf.pickShelf(Shelf.FOOTBALL_PKG, oldFootballCustom, customOk = true))
+    }
+
+    @Test fun parsesMatchoraFootballEventFeed() {
+        val items = ShelfJson.parse(
+            """
+            {
+              "events":[
+                {"sport":"Soccer","home":"Alpha","away":"Beta","league":"Test League","score":"2-1","status":"2H","minute":"67",
+                 "embed_url":"https://matchora.to/embed/match/1"},
+                {"sport":"Ice Hockey","home":"Home","away":"Away","league":"Hockey","score":"1-0","status":"LIVE","minute":"10"}
+              ]
+            }
+            """.trimIndent(),
+        )!!
+        assertEquals(1, items.size)
+        assertEquals("Alpha vs Beta", items.single().title)
+        assertEquals("Test League · 2-1 · 67′", items.single().meta)
+        assertEquals(Shelf.FOOTBALL_ART, items.single().image)
     }
 
     @Test fun customFeedOverridesABuiltInSourceOnlyWhenItParses() {
@@ -145,3 +168,4 @@ class ShelfJsonTest {
         assertFalse(Shelf.has("org.jellyfin.androidtv"))
     }
 }
+

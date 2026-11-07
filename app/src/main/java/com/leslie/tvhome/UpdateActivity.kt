@@ -28,6 +28,7 @@ class UpdateActivity : Activity() {
         val progress: ProgressBar,
         val action: TextView,
         val badge: TextView,
+        val restart: TextView,
     )
 
     private lateinit var column: LinearLayout
@@ -53,6 +54,7 @@ class UpdateActivity : Activity() {
     override fun onResume() {
         super.onResume()
         visible = true
+        Updates.executor.execute { Updates.reconcile(applicationContext) }
         Updates.prefs(this).registerOnSharedPreferenceChangeListener(listener)
         if (::autoButton.isInitialized) render()
         if (::permissionButton.isInitialized) {
@@ -90,7 +92,7 @@ class UpdateActivity : Activity() {
             setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(150,0,0,0))
             setOnClickListener { action() }
         }
-        glass.control(view)
+        glass.control(view).bindInk(listOf(view))
         view.setOnFocusChangeListener { _, on -> focus(view, on) }
         parent.addView(view, LinearLayout.LayoutParams(-1, dp(height)))
         return view
@@ -159,11 +161,12 @@ class UpdateActivity : Activity() {
 
         val summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         holder.addView(summary, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(12) })
-        summary.addView(text(18f, weight = 500).apply {
+        val title = text(18f, weight = 500).apply {
             text = p.name
             setSingleLine(true)
             ellipsize = TextUtils.TruncateAt.END
-        })
+        }
+        summary.addView(title)
         val detail = text(13f, Color.argb(180,255,255,255)).apply {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -177,6 +180,22 @@ class UpdateActivity : Activity() {
             visibility = View.GONE
         }
         summary.addView(progress, LinearLayout.LayoutParams(-1, dp(4)).apply { topMargin = dp(8) })
+        val restart = button(I18n.text(R.string.update_restart_install), summary, 34) {
+            work {
+                Updates.cancelPending(applicationContext, p, keepDownload = true)
+                if (!Updates.hasCachedOffer(applicationContext, p)) Updates.check(applicationContext)
+                Updates.install(applicationContext, p)
+            }
+        }.apply {
+            textSize = 12f
+            visibility = View.GONE
+            contentDescription = I18n.text(R.string.update_retry_product, p.name)
+        }
+        restart.setOnFocusChangeListener { _, on ->
+            focus(restart, on)
+            material.focus(on)
+            if (on) reveal(holder)
+        }
 
         val right = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -190,12 +209,13 @@ class UpdateActivity : Activity() {
             visibility = View.GONE
         }
         right.addView(badge, LinearLayout.LayoutParams(-1, dp(42)))
+        material.bindInk(listOf(title), listOf(detail, badge))
         action.setOnFocusChangeListener { _, on ->
             focus(action, on)
             material.focus(on)
             if (on) reveal(holder)
         }
-        cards[p.pkg] = AppCard(p, detail, progress, action, badge)
+        cards[p.pkg] = AppCard(p, detail, progress, action, badge, restart)
     }
 
     private fun label(action: AppUpdateCardState.Action): String = I18n.text(when (action) {
@@ -217,9 +237,11 @@ class UpdateActivity : Activity() {
             installed = Updates.installed(this, p) != null,
             optional = p.optional,
             checked = sp.contains(p.pkg + ".version"),
-            updateAvailable = sp.getBoolean(p.pkg + ".available", false),
+            updateAvailable = sp.getBoolean(p.pkg + ".available", false) &&
+                (Updates.installed(this, p) == null || UpdatePolicy.newer(
+                    sp.getString(p.pkg + ".version", "").orEmpty(), Updates.installed(this, p).orEmpty())),
             phase = sp.getString(p.pkg + ".phase", "idle") ?: "idle",
-            hasConfirmation = !sp.getString(p.pkg + ".confirmation", null).isNullOrBlank()
+            hasConfirmation = sp.getString(p.pkg + ".phase", "") == "pending" && Updates.canResume(this, p)
         ))
     }
 
@@ -241,13 +263,19 @@ class UpdateActivity : Activity() {
                 version != null && saved == "$version → $release" -> I18n.text(R.string.update_available_version, release)
                 else -> saved
             }
-            item.detail.text = when {
+            val shown = when {
                 version != null && !status.isNullOrBlank() -> I18n.text(R.string.update_version_status, version, status)
                 version != null -> I18n.text(R.string.i18n_updateactivity_001, version)
                 !status.isNullOrBlank() -> status
                 else -> I18n.text(R.string.optional_status_not_installed)
             }
+            // Sideload instructions include a full path and must stay on the card after any toast is gone.
+            item.detail.maxLines = if (shown.length > 80) 16 else 2
+            item.detail.text = shown
             val inProgress = phase in listOf("download", "verify", "stage")
+            val canRestart = phase == "pending"
+            if (!canRestart && item.restart.hasFocus()) checkButton.requestFocus()
+            item.restart.visibility = if (canRestart) View.VISIBLE else View.GONE
             item.progress.visibility = if (inProgress) View.VISIBLE else View.GONE
             item.progress.isIndeterminate = percent !in 0..100 || phase != "download"
             if (phase == "download" && percent in 0..100) item.progress.progress = percent
@@ -277,13 +305,17 @@ class UpdateActivity : Activity() {
                 if (launch != null) startActivity(launch)
                 else Toast.makeText(this, I18n.text(R.string.optional_app_not_installed), Toast.LENGTH_LONG).show()
             }
-            AppUpdateCardState.Action.CONFIRM -> {
-                if (!Updates.confirm(this, p)) Toast.makeText(this,
-                    I18n.text(R.string.update_no_confirmation), Toast.LENGTH_LONG).show()
+            AppUpdateCardState.Action.CONFIRM -> work {
+                if (!Updates.confirm(this, p)) {
+                    val sp = Updates.prefs(this)
+                    val persisted = sp.getString(p.pkg + ".status", null)
+                    val failed = sp.getString(p.pkg + ".phase", "") == "failed"
+                    error(if (failed && !persisted.isNullOrBlank()) persisted else I18n.text(R.string.update_no_confirmation))
+                }
             }
             AppUpdateCardState.Action.GET, AppUpdateCardState.Action.UPDATE, AppUpdateCardState.Action.RETRY -> work {
-                if (Updates.prefs(this).getString(p.pkg + ".phase", "") == "failed") Updates.cancelPending(applicationContext, p)
-                Updates.check(applicationContext)
+                if (Updates.prefs(this).getString(p.pkg + ".phase", "") == "failed") Updates.cancelPending(applicationContext, p, keepDownload = true)
+                if (!Updates.hasCachedOffer(applicationContext, p)) Updates.check(applicationContext)
                 Updates.install(applicationContext, p)
             }
             AppUpdateCardState.Action.CHECK -> work { Updates.check(applicationContext) }
@@ -356,14 +388,16 @@ class UpdateActivity : Activity() {
                 sp.edit().putBoolean("auto", !sp.getBoolean("auto", false)).apply()
             }
         }
-        glass.control(autoButton)
+        val autoGlass = glass.control(autoButton)
         autoButton.setOnFocusChangeListener { _, on -> focus(autoButton, on) }
         controls.addView(autoButton, LinearLayout.LayoutParams(-1, dp(64)).apply { topMargin = dp(16) })
         val autoText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         autoButton.addView(autoText, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(10) })
-        autoText.addView(text(14f, weight = 500).apply { text = I18n.text(R.string.i18n_updateactivity_008).trim() })
+        val autoLabel = text(14f, weight = 500).apply { text = I18n.text(R.string.i18n_updateactivity_008).trim() }
+        autoText.addView(autoLabel)
         autoState = text(11f, Color.argb(170,255,255,255))
         autoText.addView(autoState, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5) })
+        autoGlass.bindInk(listOf(autoLabel), listOf(autoState))
         autoSwitch = UpdateSwitch(this)
         autoButton.addView(autoSwitch, LinearLayout.LayoutParams(dp(42), dp(26)))
         left.addView(text(12f, Color.argb(150,255,255,255)).apply {
@@ -421,10 +455,13 @@ class UpdateActivity : Activity() {
     private fun loadBackdrop(view: ImageView) {
         artwork.execute {
             val backdrop = SettingsBackdrop.load(this)
+            // Extreme glass: the lens is made here too, so picture and glass land in one frame.
+            val lens = if (Prefs(this).extremeGlass)
+                runCatching { UpdateGlass.prepare(backdrop, resources.displayMetrics.widthPixels) }.getOrNull() else null
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
                     view.setImageBitmap(backdrop)
-                    glass.texture(backdrop)
+                    if (lens != null) glass.texture(lens) else glass.texture(backdrop)
                 }
             }
         }
@@ -439,7 +476,8 @@ class UpdateActivity : Activity() {
             runOnUiThread {
                 busy = false
                 if (!isFinishing && !isDestroyed) {
-                    if (error != null) Toast.makeText(this,
+                    // SideloadRequired is already the persistent card status. A toast would hide the path again.
+                    if (error != null && error !is SideloadRequired) Toast.makeText(this,
                         error.message ?: I18n.text(R.string.i18n_updates_024), Toast.LENGTH_LONG).show()
                     render()
                 }

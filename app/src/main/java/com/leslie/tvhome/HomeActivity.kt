@@ -18,13 +18,18 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.TransitionDrawable
 import android.graphics.Rect
+import android.hardware.display.DisplayManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
+import android.util.Log
+import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -68,6 +73,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
     private lateinit var backdrop: FrameLayout
     private lateinit var bg: ImageView
     private lateinit var videoWallpaper: VideoWallpaper
+    private var wallpaperPlaying = false
     private val videoGlassFrames = VideoGlassFrames()
     private val wallpaperChanges = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (resumed && (key == "background" || key == "wallpaper_video_revision")) applyBackground()
@@ -111,6 +117,8 @@ class HomeActivity : Activity(), TileAdapter.Listener {
     /** Grid scroll position; RecyclerView's own estimate is unreliable for grids. */
     private var scrollY = 0
     private var shownBackground: String? = null
+    private var glassExtreme = false
+    private var glassAppearance = ""
     @Volatile private var refreshing = false
     private var bgPhoto: android.graphics.drawable.Drawable? = null
     private var sw = 0
@@ -118,13 +126,19 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     /** Liquid Glass slab behind the first row, the "dock". */
     private lateinit var dock: ImageView
+    private var dockShadow: ImageView? = null
     private lateinit var frost: ImageView
     private lateinit var scrollGlass: FrostGlass
     private val dockRect = Rect()
     private var dockRadius = 0f
     /** The glass baked over the home picture, kept for when the shelf goes away. */
     @Volatile private var homeDock: Bitmap? = null
+    /** Extreme glass: the home picture's lenses, so leaving a Top Shelf needs no new preparation. */
+    private var homeLenses: FrostGlass.Lenses? = null
     private var dockShown: Drawable? = null
+    /** Last pre-31 video dock rebuild. API 31+ does not read this. */
+    private var lastLegacyDockGlassMs = 0L
+    private var lastLiveFrostMs = 0L
 
     /** Top Shelf: content of the focused first-row dock app filling the screen above the dock. */
     private lateinit var shelf: FrameLayout
@@ -151,9 +165,10 @@ class HomeActivity : Activity(), TileAdapter.Listener {
             val item = shelfItems[next]
             net.execute {
                 val b = Shelf.image(this@HomeActivity, item.image)
+                val glass = b?.let { shelfGlass(it) }
                 main.post {
                     if (shelfPkg == pkg && shelfShown && !control.isOpen) {
-                        if (b != null) showShelfItem(next, b)
+                        if (b != null && glass != null) showShelfItem(next, b, glass)
                         main.postDelayed(this, SHELF_SECONDS * 1000L)
                     }
                 }
@@ -173,22 +188,127 @@ class HomeActivity : Activity(), TileAdapter.Listener {
     }
 
     /**
-     * Xiaomi shows its own screensaver (with ads) after system/screen_saver_timeout instead of
-     * Android's, so the photo frame starts 15 s ahead of it when the home screen sits idle, and
-     * keeps the screen on so Xiaomi's does not follow. Elsewhere Android's screensaver applies.
+     * In-app photo-frame idle timer. Always arm before the earliest applicable system dream
+     * or screen-off deadline; otherwise Android may go to sleep before FrameActivity opens.
+     * It only runs while Home is resumed, never over video/casting in another app.
      */
-    private val idleFrame = Runnable {
-        if (hasWindowFocus() && welcome == null && sheets.isEmpty() && !control.isOpen) openFrame()
-    }
+    private var idleToken = 0
+    private var idleDueAt = 0L
+    private var lastIdleLog: String? = null
+    private var lastSuppressLog: String? = null
+    private val idleFrame = Runnable { onIdleFired() }
 
-    private fun firmwareSaverDelay(): Long? {
-        val t = runCatching { Settings.System.getLong(contentResolver, "screen_saver_timeout") }.getOrNull() ?: return null
-        return if (t > 0) maxOf(30_000L, t - 15_000L) else null
-    }
+    private fun screenSaverTimeout(): Long? =
+        runCatching { Settings.System.getLong(contentResolver, "screen_saver_timeout") }.getOrNull()
 
-    private fun restartIdle() {
+    private fun screenOffTimeout(): Long? =
+        runCatching { Settings.System.getLong(contentResolver, Settings.System.SCREEN_OFF_TIMEOUT) }.getOrNull()
+
+    private fun readSchedule() = FrameIdlePolicy.schedule(
+        prefs.frameScreensaver, prefs.frameIdleMinutes,
+        if (IdleTimerTakeover.isActive(this)) null else screenSaverTimeout(),
+        if (IdleTimerTakeover.isActive(this)) null else screenOffTimeout())
+
+    private fun cancelIdle() {
+        idleToken++
         main.removeCallbacks(idleFrame)
-        firmwareSaverDelay()?.let { main.postDelayed(idleFrame, it) }
+    }
+
+    /** [resetDeadline] is for a real key, a fresh resume, or the screen coming back on. */
+    private fun armIdle(resetDeadline: Boolean) {
+        if (!resumed) return
+        val now = SystemClock.elapsedRealtime()
+        if (resetDeadline) HomeForeground.interact(now)
+        val schedule = readSchedule()
+        if (schedule.logLine != lastIdleLog) {
+            lastIdleLog = schedule.logLine
+            Log.i(FrameIdlePolicy.TAG, schedule.logLine)
+        }
+        main.removeCallbacks(idleFrame)
+        val delay = schedule.delayMs
+        if (delay == null) {
+            idleDueAt = 0L
+            idleToken++
+            return
+        }
+        if (resetDeadline || idleDueAt == 0L) idleDueAt = now + delay
+        idleToken++
+        main.postDelayed(idleFrame, (idleDueAt - now).coerceAtLeast(0L))
+    }
+
+    private fun idleOverlays() = welcome != null || intro != null || sheets.isNotEmpty() || control.isOpen
+
+    private fun idleSuppression(): FrameIdlePolicy.Suppression? {
+        val now = SystemClock.elapsedRealtime()
+        val hint = HomeForeground.mediaHint(now)
+        val media = FrameIdleProbe.media(this, hint)
+        return FrameIdlePolicy.suppression(
+            resumed = resumed,
+            focused = hasWindowFocus(),
+            interactive = getSystemService(android.os.PowerManager::class.java).isInteractive,
+            overlays = idleOverlays(),
+            media = media,
+        )
+    }
+
+    private fun noteSuppressed(detail: String) {
+        if (detail == lastSuppressLog) return
+        lastSuppressLog = detail
+        Log.i(FrameIdlePolicy.TAG, "photo frame suppressed: $detail")
+    }
+
+    private fun onIdleFired() {
+        val token = idleToken
+        if (!resumed) return
+        val blocked = idleSuppression()
+        if (blocked != null) {
+            noteSuppressed(blocked.detail)
+            if (blocked.retry) main.postDelayed(idleFrame, FrameIdlePolicy.RETRY_MS)
+            return
+        }
+        if (!prefs.adbAuthorized) {
+            openFrameFromIdle(token)
+            return
+        }
+        io.execute {
+            val dump = LocalAdb.shell(applicationContext, "dumpsys window", 2500)
+            val foreign = FrameIdlePolicy.foreignHoldScreen(dump, packageName)
+            main.post {
+                if (token != idleToken || !resumed) return@post
+                val again = idleSuppression()
+                if (again != null) {
+                    noteSuppressed(again.detail)
+                    if (again.retry) main.postDelayed(idleFrame, FrameIdlePolicy.RETRY_MS)
+                    return@post
+                }
+                if (foreign == true) {
+                    noteSuppressed("another window holds the screen on")
+                    main.postDelayed(idleFrame, FrameIdlePolicy.RETRY_MS)
+                    return@post
+                }
+                if (foreign == null) {
+                    Log.i(FrameIdlePolicy.TAG, "frame idle: hold-screen window was not readable; other apps' FLAG_KEEP_SCREEN_ON may be invisible")
+                }
+                openFrameFromIdle(token)
+            }
+        }
+    }
+
+    private fun openFrameFromIdle(token: Int) {
+        if (token != idleToken || !resumed || isFinishing) return
+        val blocked = idleSuppression()
+        if (blocked != null) {
+            noteSuppressed(blocked.detail)
+            if (blocked.retry) main.postDelayed(idleFrame, FrameIdlePolicy.RETRY_MS)
+            return
+        }
+        lastSuppressLog = null
+        Log.i(FrameIdlePolicy.TAG, "opening photo frame; ${lastIdleLog.orEmpty()}")
+        openFrame()
+    }
+
+    private fun syncOwnPlayback() {
+        HomeForeground.setOwnPlayback(wallpaperPlaying || intro != null, SystemClock.elapsedRealtime())
     }
 
     fun openFrame() {
@@ -210,6 +330,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         Tween.readScale(this)
         prefs = Prefs(this)
         prefs.migrateFeaturedOrder()
+        glassExtreme = prefs.extremeGlass
         cols = prefs.dockColumns
         repo = AppRepo(this)
         buildViews()
@@ -238,12 +359,24 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     // Cover on screen-off, before MIUI can show the retained home frame on wake.
     // Consume the pending wake in onResume OR SCREEN_ON, never both.
+    // API 30 and below then wait for a lit display (Intro.startAfterDisplay). API 31+ does not.
     private var resumed = false
     private var wakeIntro = false
     private var wakeCover: View? = null
 
+    private fun displayState(): Int = runCatching {
+        getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)?.state
+    }.getOrNull() ?: -1
+
+    private fun logPower(event: String) {
+        val interactive = runCatching { getSystemService(android.os.PowerManager::class.java).isInteractive }.getOrNull()
+        val introMode = if (::prefs.isInitialized) prefs.intro else "-"
+        BootLog.i("event=$event display=${BootIntroGate.displayLabel(displayState())} interactive=$interactive resumed=$resumed focused=${hasWindowFocus()} intro=$introMode")
+    }
+
     private fun armWakeIntro() {
         if (prefs.intro != Prefs.INTRO_WAKE) return
+        BootLog.i("wake armed")
         wakeIntro = true
         if (wakeCover == null) {
             wakeCover = View(this).apply {
@@ -256,6 +389,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     private fun consumeWakeIntro() {
         if (!wakeIntro) return
+        BootLog.i("wake consume")
         wakeIntro = false
         if (prefs.intro == Prefs.INTRO_WAKE) playIntro(wake = true)
         wakeCover?.let { root.removeView(it) }
@@ -264,11 +398,16 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     private val screenOn = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
+            logPower(if (i.action == Intent.ACTION_SCREEN_ON) "screen_on" else "screen_off")
             if (i.action == Intent.ACTION_SCREEN_OFF) {
+                wallpaperPlaying = false
                 videoWallpaper.stop()
+                syncOwnPlayback()
+                cancelIdle()
                 armWakeIntro()
                 return
             }
+            if (resumed) armIdle(resetDeadline = true)
             if (resumed && !wakeIntro) applyBackground()
             if (!wakeIntro) return
             if (resumed) { consumeWakeIntro(); return }
@@ -279,22 +418,34 @@ class HomeActivity : Activity(), TileAdapter.Listener {
     /** Plays the boot animation over the home screen; [preview] is the one started from settings. */
     fun playIntro(preview: Boolean = false, wake: Boolean = false) {
         if (intro != null || welcome != null) return
+        wallpaperPlaying = false
         videoWallpaper.stop()
+        syncOwnPlayback()
         if (!preview) prefs.introBoot = Intro.bootStamp(this)
         sheets.toList().forEach { it.dismiss() }
         control.close()
+        BootLog.i("play wake=$wake preview=$preview delay=${if (wake) prefs.wakeDelay else 0} sdk=${Build.VERSION.SDK_INT}")
         intro = Intro(this, root, scene, prefs.introSound) {
             intro = null
+            syncOwnPlayback()
             if (resumed) applyBackground()
             if (sheets.isEmpty() && !control.isOpen) focusAt(focusedPos)
-        }.also { it.start(if (wake) prefs.wakeDelay.toLong() else 0) }
+        }.also {
+            // API 31+ keeps the fixed delay from the wake signal. Older platforms wait until the
+            // display is on: screen-on there does not mean the panel is showing a picture.
+            if (Build.VERSION.SDK_INT >= 31) it.start(if (wake) prefs.wakeDelay.toLong() else 0)
+            else it.startAfterDisplay(wake, if (wake) prefs.wakeDelay.toLong() else 0L)
+        }
+        syncOwnPlayback()
     }
 
     /** Independent of the user's boot video and sound preferences. */
     private fun playWelcome(preview: Boolean = false) {
         welcome?.let { it.close(); root.removeView(it) }
         intro?.finish()
+        wallpaperPlaying = false
         videoWallpaper.stop()
+        syncOwnPlayback()
         pauseShelfRotation()
         sheets.toList().forEach { it.dismiss() }
         control.close()
@@ -326,10 +477,14 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     override fun onDestroy() {
         resumed = false
+        cancelIdle()
+        wallpaperPlaying = false
+        syncOwnPlayback()
         videoWallpaper.destroy()
         unregisterReceiver(pkgReceiver)
         main.removeCallbacksAndMessages(null)
         control.destroy()
+        scrollGlass.close()
         intro?.finish()
         welcome?.close()
         runCatching { unregisterReceiver(screenOn) }
@@ -350,25 +505,26 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         bg = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         backdrop.addView(bg, match())
         videoWallpaper = VideoWallpaper(this, backdrop,
-            canSample = { resumed && !shelfShown && !videoGlassFrames.busy },
-            onFrame = ::updateVideoGlass)
+            canSample = { resumed && !shelfShown && (prefs.extremeGlass || !videoGlassFrames.busy) },
+            onFrame = ::updateVideoGlass,
+            onFrostSuspended = ::showVideoVeil)
 
         val dm = resources.displayMetrics
         sw = dm.widthPixels
         sh = dm.heightPixels
         // Proportions measured from a 1920×1080 tvOS 26 screenshot.
-        val side = (sw * 0.0583f).toInt()          // 112 px
+        val side = (sw * 0.06875f).toInt()
         val gap = (sw * 0.0292f).toInt()           // 56 px
         tileW = DockLayout.tileWidth(sw, side, gap, cols)
         tileH = tileW * 9 / 16
         rowPitch = (sh * 0.2463f).toInt()          // 266 px
         // The dock sits at the bottom; only the top edge of the next row peeks out below it.
         val defaultTileHeight = DockLayout.tileWidth(sw, side, gap, DockLayout.DEFAULT_COLUMNS) * 9 / 16
-        firstRowY = DockLayout.dockTop((sh * 0.744f).toInt(), defaultTileHeight, tileH)
+        firstRowY = DockLayout.dockTop((sh * 0.744f).toInt(), defaultTileHeight, tileH) + dp(10)
         expandedRowY = (sh * 0.36f).toInt()
 
         // The dock hugs the first row: a focused tile (scaled 1.12) nearly touches its edges.
-        val pad = dp(15)
+        val pad = dp(24)
         dockRect.set(side - pad, firstRowY - pad, sw - side + pad, firstRowY + tileH + pad)
         dockRadius = dp(11) + pad.toFloat()
         buildShelf(side)
@@ -379,6 +535,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         scene.addView(dock, FrameLayout.LayoutParams(dockRect.width(), dockRect.height()).apply {
             leftMargin = dockRect.left; topMargin = dockRect.top
         })
+        updateDockShadow(prefs.extremeGlass)
 
         // A persistent status row, also visible over Top Shelf and the expanded app grid.
         header = FrameLayout(this).apply { clipChildren = false; clipToPadding = false }
@@ -554,11 +711,19 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         val theme = prefs.background
         if (theme in VideoWallpaper.SOURCES) {
             showBackground("graphite", null)
-            if (resumed && intro == null && welcome == null && getSystemService(android.os.PowerManager::class.java).isInteractive)
+            if (resumed && intro == null && welcome == null && getSystemService(android.os.PowerManager::class.java).isInteractive) {
+                wallpaperPlaying = true
                 videoWallpaper.start(theme)
+            } else {
+                wallpaperPlaying = false
+                videoWallpaper.stop()
+            }
+            syncOwnPlayback()
             return
         }
+        wallpaperPlaying = false
         videoWallpaper.stop()
+        syncOwnPlayback()
         if (!Wallpapers.isPhoto(theme)) return showBackground(theme, null)
         if (refreshing) return
         refreshing = true
@@ -575,21 +740,50 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         val key = if (Wallpapers.isPhoto(theme)) "$theme:${photo?.name}" else theme
         if (key == shownBackground) return
         shownBackground = key
+        val modernDock = prefs.extremeGlass || DockGlassFallback.usesModernPipeline(Build.VERSION.SDK_INT)
+        val lowEnd = Device.isLowEnd(this)
+        val videoTheme = prefs.background in VideoWallpaper.SOURCES
         io.execute {
-            val bmp = photo?.let { Wallpapers(this, Wallpapers.sourceFor(theme)).forHome(it) } ?: Backgrounds.render(if (Wallpapers.isPhoto(theme)) "green" else theme)
-            val glass = LiquidGlass.bake(bmp, sw, sh, dockRect, dockRadius).also { it.prepareToDraw() }
+            val bmp = photo?.let { Wallpapers(this, Wallpapers.sourceFor(theme)).forHome(it, clearDock = prefs.extremeGlass) }
+                ?: Backgrounds.render(if (Wallpapers.isPhoto(theme)) "green" else theme,
+                    bottomShade = if (prefs.extremeGlass) 0.55f else 1f)
+            // API 31+ is the existing full-resolution bake. Older TVs composite a
+            // small software blur into a full-size mask. Video starts as a light
+            // veil until a snapshot is ready; the TextureView keeps playing under it.
+            val glass = (if (prefs.extremeGlass) bmp else if (modernDock) {
+                LiquidGlass.bake(bmp, sw, sh, dockRect, dockRadius, extreme = prefs.extremeGlass,
+                    darkTheme = isNight(), tintScale = prefs.glassTint(isNight()), solid = prefs.solidGlass(this))
+            } else if (videoTheme) {
+                DockGlassFallback.frosted(dockRect.width(), dockRect.height(), dockRadius)
+            } else {
+                DockGlassFallback.fromBackdrop(bmp, sw, sh, dockRect, dockRadius, video = false, lowEnd = lowEnd)
+            }).also { it.prepareToDraw() }
             val blurred = Wallpapers.blurred(bmp, darken = 0.22f)
+            // Extreme glass refracts a prepared lens. Build it here, with the picture,
+            // so the dock changes in the same frame as the wallpaper instead of a
+            // second background job later.
+            val lenses = if (prefs.extremeGlass) runCatching { FrostGlass.prepare(blurred, bmp, sw) }.getOrNull() else null
             main.post {
                 if (isDestroyed || shownBackground != key) return@post
                 // A video bake may have overtaken this initial static fallback.
                 val live = prefs.background in VideoWallpaper.SOURCES && videoWallpaper.frame != null
                 if (!live) homeDock = glass
-                if (!live) {
-                    frost.setImageBitmap(blurred)
-                    scrollGlass.texture(blurred)
-                    if (!shelfShown) setDock(glass, 1200)
-                }
                 val old = bgPhoto
+                if (!live) {
+                    homeLenses = lenses
+                    frost.setImageBitmap(blurred)
+                    scrollGlass.veil = !modernDock && videoTheme
+                    scrollGlass.frostAlpha = 255
+                    if (!scrollGlass.veil) {
+                        // Same 1200 ms as the TransitionDrawable below, which the animator
+                        // scale does not shorten either. Under a Top Shelf the dock keeps the
+                        // shelf picture; leaving it applies [homeLenses].
+                        if (lenses != null) { if (!shelfShown) scrollGlass.texture(lenses, if (old == null) 0L else 1200L) }
+                        else scrollGlass.texture(blurred, bmp)
+                    }
+                    val fade = if (!modernDock && videoTheme) DockGlassFallback.FROST_FADE_MS else 1200
+                    if (!shelfShown) setDock(glass, fade)
+                }
                 val next = android.graphics.drawable.BitmapDrawable(resources, bmp)
                 if (old == null) {
                     bg.setImageDrawable(next)
@@ -609,12 +803,16 @@ class HomeActivity : Activity(), TileAdapter.Listener {
                 bgPhoto = next
                 root.postDelayed({ if (!isDestroyed) control.refreshGlass() }, 1250)
             }
+            // After the home picture is posted: Settings then opens with its
+            // backdrop and glass already built (no-op on low-end TVs).
+            SettingsActivity.warm(applicationContext)
         }
     }
 
     /** Small video snapshots feed the existing glass renderers; never decode 4K bitmaps per frame. */
     private fun updateVideoGlass(frame: Bitmap?) {
         if (frame == null) {
+            lastLegacyDockGlassMs = 0L
             videoGlassFrames.invalidate()
             // A pause/restart must rebuild fallback textures if no video frame returns.
             shownBackground = null
@@ -624,24 +822,68 @@ class HomeActivity : Activity(), TileAdapter.Listener {
             }
             return
         }
+        if (prefs.extremeGlass) {
+            if (isDestroyed || !resumed || shelfShown) return
+            homeDock = frame
+            scrollGlass.liveTexture(frame)
+            if (dock.drawable !== scrollGlass) dock.setImageDrawable(scrollGlass)
+            control.liveFrame(frame)
+            val now = SystemClock.uptimeMillis()
+            if (scrollY > 0 && now - lastLiveFrostMs >= 100L) {
+                val ticket = videoGlassFrames.begin() ?: return
+                lastLiveFrostMs = now
+                val source = prefs.background
+                io.execute {
+                    val blurred = Wallpapers.blurred(frame, darken = 0.22f)
+                    main.post {
+                        val current = videoGlassFrames.finish(ticket)
+                        if (current && !isDestroyed && resumed && !shelfShown && prefs.background == source) {
+                            frost.setImageBitmap(blurred)
+                            scrollGlass.softTexture(blurred)
+                        }
+                    }
+                }
+            }
+            return
+        }
         val ticket = videoGlassFrames.begin() ?: return
         val source = prefs.background
+        val modernDock = prefs.extremeGlass || DockGlassFallback.usesModernPipeline(Build.VERSION.SDK_INT)
+        if (!modernDock && (videoWallpaper.frostSuspended || !DockGlassFallback.shouldRefreshVideo(
+                SystemClock.uptimeMillis(), lastLegacyDockGlassMs, videoWallpaper.weakForFrost,
+            ))
+        ) {
+            videoGlassFrames.finish(ticket)
+            return
+        }
+        if (!modernDock) lastLegacyDockGlassMs = SystemClock.uptimeMillis()
+        val lowEnd = Device.isLowEnd(this)
         io.execute {
             val result = runCatching {
-                // Match the bake to the captured frame's resolution. Rendering a
-                // larger bitmap only stretched pixels that the snapshot did not have.
-                val scale = minOf(0.5f, frame.width / sw.toFloat())
-                val rect = Rect((dockRect.left * scale).toInt(), (dockRect.top * scale).toInt(),
-                    (dockRect.right * scale).toInt(), (dockRect.bottom * scale).toInt())
-                val renderW = (sw * scale).toInt().coerceAtLeast(1)
-                val renderH = (sh * scale).toInt().coerceAtLeast(1)
-                // Live video already provides motion and color; a lighter frost
-                // and partial opacity keep more of that detail visible while the
-                // asynchronous glass texture catches up with the video.
-                val glass = LiquidGlass.bake(frame, renderW, renderH, rect, dockRadius * scale,
-                    frostStrength = 0.3f, glassOpacity = 0.5f)
-                    .also { it.prepareToDraw() }
-                glass to Wallpapers.blurred(frame, darken = 0.22f)
+                if (modernDock) {
+                    // Match the bake to the captured frame's resolution. Rendering a
+                    // larger bitmap only stretched pixels that the snapshot did not have.
+                    val scale = minOf(0.5f, frame.width / sw.toFloat())
+                    val rect = Rect((dockRect.left * scale).toInt(), (dockRect.top * scale).toInt(),
+                        (dockRect.right * scale).toInt(), (dockRect.bottom * scale).toInt())
+                    val renderW = (sw * scale).toInt().coerceAtLeast(1)
+                    val renderH = (sh * scale).toInt().coerceAtLeast(1)
+                    // Live video already provides motion and color; a lighter frost
+                    // and partial opacity keep more of that detail visible while the
+                    // asynchronous glass texture catches up with the video.
+                    val glass = (if (prefs.extremeGlass) frame else LiquidGlass.bake(frame, renderW, renderH, rect, dockRadius * scale,
+                        frostStrength = 0.3f, glassOpacity = 0.5f, extreme = prefs.extremeGlass,
+                        darkTheme = isNight(), tintScale = prefs.glassTint(isNight()),
+                        solid = prefs.solidGlass(this), renderScale = scale))
+                        .also { it.prepareToDraw() }
+                    glass to Wallpapers.blurred(frame, darken = 0.22f)
+                } else {
+                    // Full-size mask, about 55% opaque, over the live TextureView.
+                    val glass = DockGlassFallback.fromBackdrop(
+                        frame, sw, sh, dockRect, dockRadius, video = true, lowEnd = lowEnd,
+                    )
+                    glass to Wallpapers.blurred(frame, darken = 0.22f)
+                }
             }
             main.post {
                 val current = videoGlassFrames.finish(ticket)
@@ -650,9 +892,18 @@ class HomeActivity : Activity(), TileAdapter.Listener {
                     homeDock = glass
                     if (!shelfShown) {
                         frost.setImageBitmap(blurred)
-                        scrollGlass.texture(blurred)
-                        // Periodic live frames replace directly; still photos retain their cross-fade.
-                        setDock(glass, 0)
+                        if (modernDock) {
+                            scrollGlass.veil = false
+                            scrollGlass.frostAlpha = 255
+                            scrollGlass.texture(blurred, frame)
+                            // Periodic live frames replace directly; still photos retain their cross-fade.
+                            setDock(glass, 0)
+                        } else if (!videoWallpaper.frostSuspended) {
+                            scrollGlass.veil = false
+                            scrollGlass.frostAlpha = DockGlassFallback.VIDEO_FROST_ALPHA
+                            scrollGlass.texture(blurred, frame)
+                            setDock(glass, DockGlassFallback.FROST_FADE_MS)
+                        }
                         control.refreshGlass()
                     }
                 }
@@ -660,7 +911,31 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         }
     }
 
+    /** Pre-31 video whose snapshot was too slow: a light veil and rim, no frost. */
+    private fun showVideoVeil() {
+        if (isDestroyed || !::scrollGlass.isInitialized) return
+        if (DockGlassFallback.usesModernPipeline(Build.VERSION.SDK_INT)) return
+        scrollGlass.veil = true
+        scrollGlass.frostAlpha = 255
+        val w = dockRect.width().coerceAtLeast(1)
+        val h = dockRect.height().coerceAtLeast(1)
+        val radius = dockRadius
+        io.execute {
+            val veil = DockGlassFallback.frosted(w, h, radius)
+            main.post {
+                if (!isDestroyed && videoWallpaper.frostSuspended && !shelfShown) {
+                    setDock(veil, DockGlassFallback.FROST_FADE_MS)
+                }
+            }
+        }
+    }
+
     private fun setDock(b: Bitmap, fadeMs: Int) {
+        if (prefs.extremeGlass) {
+            dock.setImageDrawable(scrollGlass)
+            dockShown = scrollGlass
+            return
+        }
         val next = BitmapDrawable(resources, b)
         val old = dockShown
         if (old == null || fadeMs == 0) {
@@ -672,6 +947,40 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         }
         dockShown = next
         if (scrollY > 0) dock.setImageDrawable(scrollGlass)
+    }
+
+    /** The Dock's depth shadow is only allocated for people who opt into extreme glass. */
+    private fun isNight() = (resources.configuration.uiMode and
+        android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    private fun updateDockShadow(on: Boolean) {
+        if (!on) {
+            dockShadow?.visibility = View.GONE
+            return
+        }
+        dockShadow?.let {
+            it.visibility = View.VISIBLE
+            return
+        }
+        val pad = dp(18)
+        val offset = dp(4)
+        val bitmap = LiquidGlass.shadow(
+            dockRect.width() / 2, dockRect.height() / 2, dockRadius / 2,
+            pad / 2, alpha = 110, hollow = true,
+        )
+        val shadow = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.FIT_XY
+            setImageBitmap(bitmap)
+            translationY = dock.translationY
+        }
+        scene.addView(shadow, scene.indexOfChild(dock), FrameLayout.LayoutParams(
+            dockRect.width() + pad * 2, dockRect.height() + pad * 2,
+        ).apply {
+            leftMargin = dockRect.left - pad
+            topMargin = dockRect.top - pad + offset
+        })
+        dockShadow = shadow
     }
 
     // ------------------------------------------------------------------- shelf
@@ -719,8 +1028,9 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         net.execute {
             val items = Shelf.items(pkg, shelfCustom())
             val first = items.firstOrNull()?.let { Shelf.image(this, it.image) }
+            val glass = first?.let { shelfGlass(it) }
             main.post {
-                if (shelfPkg != pkg || first == null || control.isOpen) return@post
+                if (shelfPkg != pkg || first == null || glass == null || control.isOpen) return@post
                 shelfItems = items
                 shelfSource.text = Shelf.sourceName(pkg)
                 shelfDots.removeAllViews()
@@ -728,7 +1038,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
                     shelfDots.addView(View(this).apply { background = rounded(Color.WHITE, dp(4).toFloat()) },
                         LinearLayout.LayoutParams(dp(7), dp(7)).apply { marginStart = dp(7) })
                 }
-                showShelfItem(0, first)
+                showShelfItem(0, first, glass)
                 setShelfVisible(true)
                 main.removeCallbacks(shelfAdvance)
                 main.postDelayed(shelfAdvance, SHELF_SECONDS * 1000L)
@@ -736,7 +1046,24 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         }
     }
 
-    private fun showShelfItem(i: Int, b: Bitmap) {
+    /** A Top Shelf picture's dock glass, made with the picture on its loader thread. */
+    private class ShelfGlass(val dock: Bitmap?, val lenses: FrostGlass.Lenses?)
+
+    private fun shelfGlass(b: Bitmap): ShelfGlass = runCatching {
+        // The picture already carries the scrim (see Shelf.darken).
+        // API 31+ keeps the original bake. Older TVs use the full-size mask.
+        if (prefs.extremeGlass) ShelfGlass(b, FrostGlass.prepare(b, b, sw))
+        else ShelfGlass((if (DockGlassFallback.usesModernPipeline(Build.VERSION.SDK_INT)) {
+            LiquidGlass.bake(b, sw, sh, dockRect, dockRadius, extreme = false,
+                darkTheme = isNight(), tintScale = prefs.glassTint(isNight()), solid = prefs.solidGlass(this))
+        } else {
+            DockGlassFallback.fromBackdrop(
+                b, sw, sh, dockRect, dockRadius, video = false, lowEnd = Device.isLowEnd(this@HomeActivity),
+            )
+        }).also { it.prepareToDraw() }, null)
+    }.getOrElse { ShelfGlass(null, null) }  // The picture still shows; the dock keeps its glass.
+
+    private fun showShelfItem(i: Int, b: Bitmap, glass: ShelfGlass) {
         val item = shelfItems.getOrNull(i) ?: return
         shelfIndex = i
         // The new picture fades in over the old one, settling from a slight zoom.
@@ -775,13 +1102,14 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         shelfMeta.text = item.meta
         shelfInfo.animate().alpha(1f).translationY(0f).setDuration(450).setStartDelay(150).start()
         for (k in 0 until shelfDots.childCount) shelfDots.getChildAt(k).alpha = if (k == i) 1f else 0.35f
-        // The dock refracts the new picture.
-        val pkg = shelfPkg
-        io.execute {
-            // The picture already carries the scrim (see Shelf.darken).
-            val glass = LiquidGlass.bake(b, sw, sh, dockRect, dockRadius).also { it.prepareToDraw() }
-            main.post { if (shelfShown && shelfPkg == pkg && shelfIndex == i) setDock(glass, 600) }
+        // The dock refracts the new picture from this frame on, fading with it: the
+        // shelf itself fades in over 500 ms the first time, later pictures over 700 ms.
+        val lenses = glass.lenses
+        if (lenses != null && prefs.extremeGlass) {
+            val ms = ((if (old == null) 500 else 700) * Tween.scale()).toLong()
+            scrollGlass.texture(lenses, ms, if (old == null) android.view.animation.AccelerateDecelerateInterpolator() else Motion.ease)
         }
+        glass.dock?.let { setDock(it, 600) }
         // Fetch the next picture ahead of time.
         shelfItems.getOrNull((i + 1) % shelfItems.size)?.let { n -> net.execute { Shelf.image(this, n.image) } }
     }
@@ -804,7 +1132,22 @@ class HomeActivity : Activity(), TileAdapter.Listener {
                 }
                 if (!isDestroyed) control.refreshGlass()
             }.start()
-        if (!v) homeDock?.let { setDock(it, 450) }
+        if (!v) {
+            if (prefs.extremeGlass) {
+                val video = videoWallpaper.frame
+                val lenses = homeLenses
+                if (video == null && lenses != null) {
+                    // Already prepared: back in step with the shelf's 350 ms fade-out.
+                    scrollGlass.texture(lenses, (350 * Tween.scale()).toLong(),
+                        android.view.animation.AccelerateDecelerateInterpolator())
+                } else {
+                    val image = video ?: (bgPhoto as? BitmapDrawable)?.bitmap
+                    val soft = (frost.drawable as? BitmapDrawable)?.bitmap
+                    if (image != null && soft != null) scrollGlass.texture(soft, image)
+                }
+            }
+            homeDock?.let { setDock(it, 450) }
+        }
     }
 
     private fun hideShelf() {
@@ -844,6 +1187,7 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     /** The home scene alone, without the control center or any dialog; the glass controls sample it. */
     val sceneView: View get() = scene
+    internal fun glassVideoFrame(): Bitmap? = if (shelfShown) null else videoWallpaper.frame
 
     /** An opaque wallpaper base prevents transitional scene alpha from baking black into glass. */
     fun drawGlassScene(canvas: Canvas): Boolean {
@@ -916,14 +1260,16 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         // Keep the glass with the first row and sample the wallpaper at its current position.
         val expansion = (offset / (rowPitch * 0.7f)).coerceIn(0f, 1f)
         dock.translationY = -offset
+        dockShadow?.translationY = -offset
         icons.translationY = -offset
         weatherCard.alpha = 1f - expansion
         // Off-screen controls must also leave remote-control focus navigation.
         icons.visibility = if (offset > 0f && offset >= icons.bottom) View.INVISIBLE else View.VISIBLE
         dock.alpha = 1f
         frost.alpha = expansion
+        scrollGlass.expansion = expansion
         if (offset > 0f) { dock.setImageDrawable(scrollGlass); scrollGlass.invalidateSelf() }
-        else dock.setImageDrawable(dockShown)
+        else dock.setImageDrawable(if (prefs.extremeGlass) scrollGlass else dockShown)
         // The large clock gives way to the rows coming up under it.
         if (!shelfShown) bigClock.alpha = 1f - expansion
     }
@@ -1218,8 +1564,25 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         focusAt(focusedPos)
     }
 
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        armIdle(resetDeadline = true)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (intro != null) BootLog.i("event=focus has=$hasFocus display=${BootIntroGate.displayLabel(displayState())}")
+        intro?.onWindowFocus(hasFocus)
+        val now = SystemClock.elapsedRealtime()
+        HomeForeground.windowFocus(hasFocus, now)
+        if (!resumed) return
+        if (!hasFocus) cancelIdle()
+        else if (HomeForeground.isDreamBounce(now)) armIdle(resetDeadline = false)
+        else armIdle(resetDeadline = true)
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        restartIdle()
+        armIdle(resetDeadline = true)
         if (VoiceAssistant.handleBack(this, event.keyCode, event.action)) return true
         welcome?.let { return it.key(event) }
         // Any key skips the intro to its closing zoom; nothing behind it reacts meanwhile.
@@ -1275,20 +1638,38 @@ class HomeActivity : Activity(), TileAdapter.Listener {
 
     override fun onResume() {
         super.onResume()
+        IdleTimerTakeover.noteHomeResumed()
+        IdleTimerTakeover.sync(this)
         // Rebuild only after Settings changes column count; order/folders remain in Prefs.
         if (cols != prefs.dockColumns) { recreate(); return }
+        val appearance = "${prefs.extremeGlass}:${prefs.glassTint(isNight())}:${prefs.solidGlass(this)}:${isNight()}"
+        if (glassAppearance != appearance) {
+            glassAppearance = appearance
+            glassExtreme = prefs.extremeGlass
+            updateDockShadow(glassExtreme)
+            shownBackground = null
+        }
         prefs.observe(wallpaperChanges)
         avatar.visibility = if (prefs.showAvatar) View.VISIBLE else View.GONE
         avatar.setPortrait(SettingsActivity.avatarFile(this)?.let { SettingsActivity.decodeIcon(it, 96) })
         adapter.tvosFocus = prefs.focusTvos(this)
         applyClockStyle()
         control.applyStyle()
+        // Rebuilds a Settings scene dropped under memory pressure or made stale by
+        // a settings change; returns at once when it is still current.
+        val app = applicationContext
+        io.execute { SettingsActivity.warm(app) }
         if (getSystemService(android.os.PowerManager::class.java).isInteractive) consumeWakeIntro()
+        intro?.onWindowFocus(hasWindowFocus())
         resumed = true
+        logPower("resume")
         welcome?.resume()
         prefs.homeInFront = true
         HomeGuardService.onHomeResumed()
-        restartIdle()
+        val now = SystemClock.elapsedRealtime()
+        HomeForeground.resume(now)
+        if (HomeForeground.isDreamBounce(now)) armIdle(resetDeadline = false)
+        else armIdle(resetDeadline = true)
         applyBackground()
         updateNetworkIcon()
         main.removeCallbacks(ticker)
@@ -1303,17 +1684,23 @@ class HomeActivity : Activity(), TileAdapter.Listener {
         VoiceAssistant.onPermissionResult(this, requestCode, grantResults)
     }
     override fun onPause() {
+        logPower("pause")
         HomeGuardService.onHomePaused()
         resumed = false
         prefs.unobserve(wallpaperChanges)
+        wallpaperPlaying = false
         videoWallpaper.stop()
         // Leaving for another app (or standby) ends the intro rather than leaving it half played.
-        intro?.finish()
+        // A not-yet-started clip on API 30- is kept: Sony pauses Home while the panel is still dark.
+        if (intro?.isWaitingForDisplay() == true) BootLog.i("pause during display wait")
+        else intro?.finish()
+        syncOwnPlayback()
         welcome?.pause()
         if (!getSystemService(android.os.PowerManager::class.java).isInteractive) armWakeIntro()
         resumed = false
         prefs.homeInFront = false
-        main.removeCallbacks(idleFrame)
+        HomeForeground.pause(SystemClock.elapsedRealtime())
+        cancelIdle()
         main.removeCallbacks(ticker)
         main.removeCallbacks(shelfAdvance)
         super.onPause()

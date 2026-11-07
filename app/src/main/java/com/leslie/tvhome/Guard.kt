@@ -62,7 +62,7 @@ object Guard {
     /** Xiaomi switches ADB off on every wake, so "keep ADB on" is offered there only. */
     fun isXiaomi() = XiaomiAdapter.isXiaomi()
 
-    private fun isTcl() = TclAdapter.isTcl()
+    internal fun isTcl() = TclAdapter.isTcl()
 
     /**
      * Whether this TV needs the guard: Xiaomi and TCL (Xiaomi reports Tigris as the default home
@@ -140,6 +140,7 @@ object Guard {
         if (!isUserUnlocked(ctx)) return false
         ensureAdb(ctx)
         if (!hasSecureSettings(ctx)) return false
+        IdleTimerTakeover.sync(ctx)
         keepScreensaver(ctx)
         if (!Prefs(ctx).guard) return false
         RevivalSync.ensure(ctx)
@@ -227,6 +228,8 @@ object Guard {
         val current = Settings.Secure.getString(r, "screensaver_components").orEmpty()
         if (ComponentName.unflattenFromString(current) == mine) return
         runCatching {
+            if (Prefs(ctx).prevScreensaver.isEmpty() && !current.startsWith(ctx.packageName))
+                Prefs(ctx).prevScreensaver = current
             Settings.Secure.putString(r, "screensaver_components", mine.flattenToString())
             Log.i(TAG, "the screensaver was $current; put the photo frame back")
         }
@@ -281,6 +284,8 @@ class ConfigReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         val prefs = Prefs(c)
         if (i.hasExtra("keep_adb")) prefs.keepAdb = i.getBooleanExtra("keep_adb", false)
+        if (i.hasExtra("unified_idle")) prefs.unifiedIdle = i.getBooleanExtra("unified_idle", true)
+        if (i.hasExtra("frame_idle_minutes")) prefs.frameIdleMinutes = i.getIntExtra("frame_idle_minutes", 10)
         if (i.hasExtra("guard")) Guard.setEnabled(c, i.getBooleanExtra("guard", false))
         if (i.hasExtra("home_filter")) {
             val on = i.getBooleanExtra("home_filter", false) &&
@@ -290,6 +295,7 @@ class ConfigReceiver : BroadcastReceiver() {
         }
         // Looks (主屏幕设置 → 外观 / 开机动画), mostly for agents setting a TV up.
         i.getStringExtra("cc_style")?.let { prefs.ccStyle = it }
+        if (i.hasExtra("extreme_glass")) prefs.extremeGlass = i.getBooleanExtra("extreme_glass", false)
         i.getStringExtra("focus_style")?.let { prefs.focusStyle = it }
         i.getStringExtra("clock_style")?.let { prefs.clockStyle = it }
         if (i.hasExtra("clock_24")) prefs.clock24 = i.getBooleanExtra("clock_24", false)
@@ -324,8 +330,12 @@ class ConfigReceiver : BroadcastReceiver() {
         i.getStringExtra("voice_tts_voice")?.let { prefs.voiceTtsVoice = it }
         i.getStringExtra("voice_test_text")?.let { VoiceAssistant.acceptTranscript(c, it) }
         Guard.ensure(c)
+        IdleTimerTakeover.sync(c)
         resultData = "guard=${prefs.guard} keep_adb=${prefs.keepAdb} home_filter=${prefs.persistentHomeFilter} secure_settings=${Guard.hasSecureSettings(c)} " +
             "background=${prefs.background} cc_style=${prefs.ccStyle} focus_style=${prefs.focusStyle} clock_style=${prefs.clockStyle} clock_24=${prefs.clock24} " +
-            "intro=${prefs.intro} intro_source=${prefs.introSource} wake_delay=${prefs.wakeDelay} own_icon=${prefs.ownIcon} settings_bg=${prefs.settingsBg} voice_enabled=${prefs.voiceEnabled} voice_accessibility=${prefs.voiceAccessibility} voice_stt=${prefs.voiceSttProvider} voice_tts=${prefs.voiceTtsProvider} llm_configured=${prefs.voiceLlmKey.isNotBlank()} low_end=${Device.isLowEnd(c)}"
+            "intro=${prefs.intro} intro_source=${prefs.introSource} wake_delay=${prefs.wakeDelay} own_icon=${prefs.ownIcon} " +
+            "settings_bg=${prefs.settingsBg} voice_enabled=${prefs.voiceEnabled} voice_accessibility=${prefs.voiceAccessibility} " +
+            "voice_stt=${prefs.voiceSttProvider} voice_tts=${prefs.voiceTtsProvider} llm_configured=${prefs.voiceLlmKey.isNotBlank()} " +
+            "extreme_glass=${prefs.extremeGlass} low_end=${Device.isLowEnd(c)}"
     }
 }

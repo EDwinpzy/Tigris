@@ -72,7 +72,7 @@
     <string name="i18n_settingsactivity_070" formatted="false">正在下载…</string>
     <string name="i18n_settingsactivity_071">已有 %1$s 张</string>
     <string name="i18n_settingsactivity_072" formatted="false">电视空闲时显示相框</string>
-    <string name="i18n_settingsactivity_073" formatted="false">电视空闲一段时间后全屏轮播照片或航拍视频，代替电视自带的屏保。</string>
+    <string name="i18n_settingsactivity_073" formatted="false">主屏幕空闲后显示照片或航拍。在 Tigris 设置或更新页停留时，也会响应电视系统的屏保时间；不覆盖其他前台应用或正在播放的内容。</string>
     <string name="i18n_settingsactivity_074" formatted="false">正在设置…</string>
     <string name="i18n_settingsactivity_075" formatted="false">需要先授权本机调试</string>
     <string name="i18n_settingsactivity_076" formatted="false">屏保内容</string>
@@ -80,9 +80,7 @@
     <string name="i18n_settingsactivity_078" formatted="false">Apple TV 航拍视频</string>
     <string name="i18n_settingsactivity_079" formatted="false">照片</string>
     <string name="i18n_settingsactivity_080" formatted="false">空闲多久显示相框</string>
-    <string name="i18n_settingsactivity_081" formatted="false">多久没有操作后显示相框。</string>
-    <string name="i18n_settingsactivity_082" formatted="false">正在设置…</string>
-    <string name="i18n_settingsactivity_083" formatted="false">需要先授权本机调试</string>
+    <string name="i18n_settingsactivity_081" formatted="false">等待多久后显示相框。统一计时生效后，系统屏保也用这个时间；确认暂停的视频可以进入相框，播放和投屏时不打断。未接管时只管理 Tigris 桌面。</string>
     <string name="i18n_settingsactivity_084" formatted="false">相框每张照片停留</string>
     <string name="i18n_settingsactivity_085" formatted="false">相框里每张照片显示多久。</string>
     <string name="i18n_settingsactivity_086">%1$s 秒</string>
@@ -101,7 +99,7 @@
     <string name="i18n_settingsactivity_099" formatted="false">释放内存时不会被关掉的 App，比如投屏和音乐。</string>
     <string name="i18n_settingsactivity_100">%1$s 个</string>
     <string name="i18n_settingsactivity_101" formatted="false">按遥控器电源键时</string>
-    <string name="i18n_settingsactivity_102" formatted="false">待机：和平时一样。彻底关机：省电，但开机要等更久。</string>
+    <string name="i18n_settingsactivity_102" formatted="false">彻底关机仅在系统能确认电源键操作时执行，开机会更久。自动待机和屏保不会触发彻底关机。</string>
     <string name="i18n_settingsactivity_103" formatted="false">彻底关机</string>
     <string name="i18n_settingsactivity_104" formatted="false">待机</string>
     <string name="i18n_settingsactivity_105" formatted="false">需要先授权本机调试才会生效</string>
@@ -158,4 +156,14 @@
     <string name="i18n_settingsactivity_156" formatted="false">每天</string>
     <string name="i18n_settingsactivity_157">%1$s 小时</string>
     <string name="i18n_settingsactivity_158">%1$s 分钟</string>
+    <string name="i18n_settingsactivity_159" formatted="false">极致液态玻璃</string>
+    <string name="i18n_settingsactivity_160" formatted="false">静态背景使用折射与色散，动态壁纸直接透明透出，保留边缘光。建议高性能电视开启。</string>
+    <string name="glass_light_tint">玻璃着色 · 浅色模式</string>
+    <string name="glass_dark_tint">玻璃着色 · 深色模式</string>
+    <string name="glass_tint_help">每次调整 25%，范围 0%–150%。100% 为参考材质，0% 仅保留模糊、折射和边缘光。</string>
+    <string name="glass_reduce_transparency">减少玻璃透明效果</string>
+    <string name="glass_reduce_transparency_help">改用实色表面，让文字更清楚。系统开启高对比度文字时也会自动使用实色。</string>
+    <string name="unified_idle_title" formatted="false">统一相框与待机计时</string>
+    <string name="unified_idle_desc" formatted="false">接管桌面且授权完成后，Android 屏保也使用上面的相框时间，关闭独立的标准系统自动待机计时。播放和投屏继续避让；关闭此项恢复原设置。厂商私有计时不自动修改。</string>
+    <string name="unified_idle_pending" formatted="false">等待接管或授权</string>
 </resources>

@@ -559,6 +559,9 @@ class HomeGuardService : AccessibilityService() {
         @Volatile private var deafAfterHome = false
 
         val isRunning: Boolean get() = instance != null
+        val recentlyBroughtHome: Boolean get() = instance?.let {
+            it.broughtBackAt > 0 && SystemClock.uptimeMillis() - it.broughtBackAt in 0..5000L
+        } == true
 
         fun isStockHome(pkg: String): Boolean = instance?.stockHomes?.containsKey(pkg) == true
 

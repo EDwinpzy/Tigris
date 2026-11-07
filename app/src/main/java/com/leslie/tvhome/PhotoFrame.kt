@@ -7,7 +7,9 @@ import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.dreams.DreamService
+import android.util.Log
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -189,16 +191,62 @@ class FrameActivity : Activity() {
     }
 }
 
-/** The same screensaver as the system one, shown after the TV has been idle. */
+/**
+ * Android has already decided that the device is idle when it starts this dream. Rechecking
+ * Home's independent timer here races the dream's own focus transition and can immediately
+ * finish the dream, which lets Android go to sleep. Accept our idle settings/update pages
+ * and verified paused third-party video; active playback and casting still block the dream.
+ */
 class PhotoDream : DreamService() {
     private var frame: SaverHost? = null
+    @Volatile private var attached = false
+    private var started = false
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        attached = true
+        isInteractive = true
+        isFullscreen = true
+        setScreenBright(true)
+        setContentView(FrameLayout(this))
+        val now = SystemClock.elapsedRealtime()
+        val coversOurUi = ScreensaverScope.coversTigrisUi(now) || HomeForeground.dreamCoversHome(now)
+        Thread {
+            val media = FrameIdleProbe.media(this, HomeForeground.mediaHint(now), shellFallback = true)
+            // Rejecting a dream without recording user activity lets some TV firmware
+            // immediately sleep. Reset only an explicitly managed timer, using the
+            // existing authorized shell; never send POWER or SLEEP.
+            if (!FrameIdlePolicy.dreamDecision(coversOurUi, media).show && IdleTimerTakeover.isActive(this)) {
+                LocalAdb.refreshIdleIfInteractive(this) { attached }
+            }
+            Handler(Looper.getMainLooper()).post {
+                if (attached) showOrDismiss(coversOurUi, media, now)
+            }
+        }.start()
+    }
+
+    private fun showOrDismiss(coversOurUi: Boolean, media: FrameIdlePolicy.Media, now: Long) {
+        val decision = FrameIdlePolicy.dreamDecision(
+            coversTigrisUi = coversOurUi,
+            media = media,
+        )
+        if (!decision.show) {
+            Log.i(FrameIdlePolicy.TAG, "dismissing system photo dream: ${decision.reason}")
+            if (coversOurUi) HomeForeground.noteDreamRejected(now)
+            runCatching { wakeUp() }.onFailure {
+                Log.w(FrameIdlePolicy.TAG, "could not dismiss photo dream", it)
+                finish()
+            }
+            return
+        }
+        Log.i(FrameIdlePolicy.TAG, "system photo dream starting: ${decision.reason}; system idle timeout")
         // Interactive so that left / right can skip a film; every other key ends the dream.
         isInteractive = true
         isFullscreen = true
+        // Some TV firmware dims or sleeps dreams unless they explicitly keep the display lit.
+        setScreenBright(true)
         frame = SaverHost(this).also { setContentView(it) }
+        if (started) frame?.start()
     }
 
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
@@ -210,6 +258,7 @@ class PhotoDream : DreamService() {
         return true
     }
 
-    override fun onDreamingStarted() { super.onDreamingStarted(); frame?.start() }
-    override fun onDreamingStopped() { frame?.stop(); super.onDreamingStopped() }
+    override fun onDreamingStarted() { super.onDreamingStarted(); started = true; frame?.start() }
+    override fun onDreamingStopped() { started = false; attached = false; frame?.stop(); super.onDreamingStopped() }
+    override fun onDetachedFromWindow() { attached = false; super.onDetachedFromWindow() }
 }

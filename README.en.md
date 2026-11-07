@@ -14,7 +14,7 @@ A tvOS-inspired launcher for Android TV, featuring a Liquid Glass Dock, Top Shel
 
 Earlier versions were tested on Sony BRAVIA devices. New firmware-specific takeover fixes and video optimizations still need model-level verification. Other devices and firmware variants may require adjustments.
 
-**Website:** [tigris-tv.pages.dev](https://tigris-tv.pages.dev) · **[v2.0.16 Release](https://github.com/lesnolie/Tigris/releases/tag/v2.0.16)** ([Standard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/Tigris-v2.0.16.apk) · [Compatibility Guard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/Tigris-guard-v2.0.16.apk) · [SHA-256 checksums](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/SHA256SUMS-v2.0.16.txt))
+**Website:** [tigris-tv.pages.dev](https://tigris-tv.pages.dev) · **[v2.0.24 Release](https://github.com/lesnolie/Tigris/releases/tag/v2.0.24)** ([Standard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.24/Tigris-v2.0.24.apk) · [Compatibility Guard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.24/Tigris-guard-v2.0.24.apk) · [SHA-256 checksums](https://github.com/lesnolie/Tigris/releases/download/v2.0.24/SHA256SUMS-v2.0.24.txt))
 - Documentation index: **[docs/README.md](docs/README.md)**
 
 [![Tigris promotional film](docs/screenshots/film.jpg)](https://tigris-tv.pages.dev/#film)
@@ -23,7 +23,7 @@ Earlier versions were tested on Sony BRAVIA devices. New firmware-specific takeo
 
 ## Which APK should I install? Check the TV OS and firmware
 
-> **Latest official release: v2.0.16.** Download `Tigris-v2.0.16.apk` (Standard) or `Tigris-guard-v2.0.16.apk` (Compatibility Guard) and upgrade in place with the matching flavor. This release limits repeated Sony BRAVIA registration, adds a safe HDMI fallback, and improves local ADB authorization failure messages. Device-level acceptance is still pending; Guard is not universal.
+> **Latest official release: v2.0.24.** Upgrade in place with the matching Standard/Guard flavor. Extreme Liquid Glass now switches with no visible delay: entering Settings, changing the background and Top Shelf transitions move glass and backdrop in the same frame, with lower drawing cost while scrolling. Includes v2.0.23's unified idle timing. See [release notes](docs/releases/v2.0.24.md).
 
 | TV / platform | First choice | When to use another build | Important limits |
 |---|---|---|---|
@@ -36,6 +36,43 @@ Earlier versions were tested on Sony BRAVIA devices. New firmware-specific takeo
 | Samsung **Tizen**, Hisense **native VIDAA** | **No supported Android APK** | Neither | Do not run Android ADB installer commands |
 
 **Verification:** After installing, open another app and press the physical Home key; check reboot, standby/wake and long-press Home cleanup separately. If Home does not return to Tigris, keep the stock launcher enabled and use the [brand install and recovery guide](docs/installation-compatibility.md). Preserve the existing APK signing identity and user data; **do not uninstall merely to bypass installation restrictions**.
+
+## v2.0.24: glass and backdrop switch together
+
+Opening Settings, changing wallpapers, and entering or leaving Top Shelf now prepare Extreme Liquid Glass with the backdrop, apply both in the same frame, and fade them together. Settings scrolling also takes less drawing work. On a Sony XR-55A80J (Android 12), Settings settled in 0.13–0.22 seconds instead of about 1.05–1.27 seconds.
+
+Extreme Liquid Glass remains off by default; enable it below Control Center style in Home Settings. The first frame after a key press can still be late while the GPU wakes from idle; other TV models remain unverified. Matching Standard/Compatibility Guard upgrades keep the existing signing identity and user data. See the [v2.0.24 release notes](docs/releases/v2.0.24.md).
+
+## v2.0.23: unified photo-frame timing after HOME takeover
+
+After verified HOME takeover and the required permissions, Android's standard screensaver follows Tigris's photo-frame delay. Opting out or losing takeover attempts to restore the original settings while preserving later user edits. A confirmed paused foreground video may enter the system-triggered photo frame; playback and casting remain protected. Normal app mode leaves system timers alone. See the [v2.0.23 release notes](docs/releases/v2.0.23.md).
+
+## v2.0.22: cleaner app artwork and optional extreme glass
+
+App icons now retain their original shapes in the existing 16:9 tvOS tiles: properly proportioned TV banners fill the card, while square or unusually wide artwork fits without destructive center cropping. Low-resolution banners fall back to the app icon; apps without banners receive a consistent, restrained gradient background and a clean, properly scaled icon instead of an enlarged blurred duplicate. Dock layout, user order, folders, focus motion and the original launcher remain unchanged. The optional extreme Liquid Glass material (merged in [#86](https://github.com/lesnolie/Tigris/pull/86)) adds transparent video Dock/Control Center surfaces and refined static-wallpaper glass; it is off by default. Details: [v2.0.22 release notes](docs/releases/v2.0.22.md).
+
+## v2.0.21: reliable updates and idle photo-frame safeguards
+
+The photo frame now starts ahead of Android's system sleep deadline, and an idle Tigris Home, Settings, Updates or Wallpaper page may show it. An external video player is eligible only when the foreground media session explicitly reports PAUSED and Android starts its dream; active playback and recognized casting (even silent) take priority and block the photo frame. Sony install confirmations now use the actual PackageInstaller intent, cached update offers survive temporary GitHub network failures, and HGTV numeric release tags are recognized. Device-specific install/casting still require testing. See [v2.0.21 release notes](docs/releases/v2.0.21.md).
+
+<details>
+<summary><strong>Older release notes (v2.0.13–v2.0.20)</strong></summary>
+
+## v2.0.20: dock glass on Android 11 and older
+
+On Android 11 and older, the dock over a moving video is drawn at its real size: a rounded mask, a slow heavy blur at about 55% opacity, and a light veil if a snapshot is too slow. The video keeps playing underneath. Android 12 and newer are unchanged. See the [v2.0.20 release notes](docs/releases/v2.0.20.md).
+
+## v2.0.19: installation recovery, screensavers and power-key shutdown
+
+Continue recommits an interrupted installation; Force retry replaces its old task without removing app data. System screensavers no longer exit because Home’s timer was reset, and automatic standby cannot trigger the optional power-key full shutdown. See the [v2.0.19 release notes](docs/releases/v2.0.19.md).
+
+## v2.0.18: install confirmation, photo frame, and wake animation
+
+TVs with no install confirmation page keep the verified APK and show an `adb install -r` command. The photo frame does not interrupt active video or recognized casting; v2.0.21 further refined the idle and paused-video rules. On Android 9–11 the wake animation waits until the panel is lit. See the [v2.0.18 release notes](docs/releases/v2.0.18.md).
+
+## v2.0.17: Sony Android 9 sync permissions
+
+The manifest declares the normal permissions `READ_SYNC_SETTINGS` and `WRITE_SYNC_SETTINGS`. `RevivalSync.ensure()` can read and set the sync adapter on Android 9 without the `SecurityException` recorded in [#53](https://github.com/lesnolie/Tigris/issues/53). Android grants them at install time. There is no new runtime prompt, and the guard and sync lifecycle are unchanged. See [PR #72](https://github.com/lesnolie/Tigris/pull/72). Physical Home, boot, and accessibility revival on that TV still need a retest, so #53 stays open. See the [v2.0.17 release notes](docs/releases/v2.0.17.md).
 
 ## v2.0.16: Sony controls and ADB diagnostics
 
@@ -59,6 +96,11 @@ From Tigris on the TV, open **Home Settings → Apps, casting & updates** to opt
 
 The redesigned **Apps & Updates** screen presents one tvOS-style card per app with just one contextual action (Get, Open or Update); download progress and Retry only appear when needed. Neither APK is bundled with Tigris, auto-installed for new users, or pinned to the Dock by default. Once installed, each becomes a normal launcher app and may be moved to the Dock. The installer checks release SHA-256 and a documented signing identity, and refuses incompatible upgrades instead of deleting app data. Automatic updates apply only to already installed apps. [Policy and limitations](docs/updater.md).
 
+</details>
+
+<details>
+<summary><strong>TV screenshots and demonstrations</strong></summary>
+
 ## Screenshots
 
 ![Home screen](docs/screenshots/home.jpg)
@@ -68,6 +110,11 @@ The redesigned **Apps & Updates** screen presents one tvOS-style card per app wi
 | ![Top Shelf](docs/screenshots/shelf.jpg) | ![All apps](docs/screenshots/grid.jpg) |
 | **Control Center** | **Photo frame / screensaver** |
 | ![Control Center](docs/screenshots/cc.jpg) | ![Photo frame](docs/screenshots/frame.jpg) |
+
+</details>
+
+<details>
+<summary><strong>Device compatibility reports and community feedback</strong></summary>
 
 ## TV installation and compatibility reports
 
@@ -95,12 +142,19 @@ Please [open a structured TV compatibility report](https://github.com/lesnolie/T
 <!-- TV_COMPATIBILITY_AUTO_START -->
 | TV model | Android | Tigris / APK | Installation result | Issue state | Source |
 |---|---|---|---|---|---|
-| Sony XR-55A80K &#124; BRAVIA 4K VH21 | Android 12 (API level 31) | v2.0.15 / Standard | Installed and launched (reported) | Open | [#69](https://github.com/lesnolie/Tigris/issues/69) |
+| TCL Q10L | 安卓12 | 2.0.22 / Standard | Installed and launched (reported) | Open | [#89](https://github.com/lesnolie/Tigris/issues/89) |
+| SONY 9500G | 10 | 2.0.17 / Standard | Installed and launched (reported) | Open | [#77](https://github.com/lesnolie/Tigris/issues/77) |
+| Sony XR-55A80K &#124; BRAVIA 4K VH21 | Android 12 (API level 31) | v2.0.15 / Standard | Installed and launched (reported) | Closed (fix unverified) | [#69](https://github.com/lesnolie/Tigris/issues/69) |
 | Sony BRAVIA 4K GB（BRAVIA_ATV2_CN，国行，2017 平台） | Android 9 (API 28) | v2.0.11 / Standard | Installed and launched (reported) | Open | [#53](https://github.com/lesnolie/Tigris/issues/53) |
 | GOOJODOQ HY300 Pro+ | Android 14 | v2.0.9 / Standard | Installed and launched (reported) | Open | [#47](https://github.com/lesnolie/Tigris/issues/47) |
 | 创维酷开 85P3DMAX | Android 11 | 2.0.2 / Custom fork | Installed and launched (reported) | Closed (fix unverified) | [#15](https://github.com/lesnolie/Tigris/issues/15) |
 | 雷鸟 75S545C | Android 9 | V2.0.2 / Guard | Installed and launched (reported) | Closed (fix unverified) | [#14](https://github.com/lesnolie/Tigris/issues/14) |
 <!-- TV_COMPATIBILITY_AUTO_END -->
+
+</details>
+
+<details>
+<summary><strong>Installation with an AI coding agent or ADB</strong></summary>
 
 ## Install with an AI coding agent
 
@@ -147,6 +201,11 @@ curl -fsSL https://raw.githubusercontent.com/lesnolie/Tigris/main/install.sh \
 
 To explicitly keep ADB enabled, add `KEEP_ADB=1` before `bash`. New releases ship `Tigris-vX.Y.Z.apk`, `Tigris-guard-vX.Y.Z.apk` and `SHA256SUMS-vX.Y.Z.txt`; the installer also accepts older filenames. The installer will not silently uninstall an APK when signatures differ. See the [installation and restore guide](docs/installation.md). On Windows, follow [AGENTS.md](AGENTS.md) with a command-capable desktop agent or use PowerShell/ADB manually; phone chat alone cannot operate the TV.
 
+</details>
+
+<details>
+<summary><strong>Complete feature list and historical milestones</strong></summary>
+
 ## Features
 
 ### What's new in v2.0.6
@@ -171,10 +230,15 @@ App folders, phone-based avatar upload, an update center for Tigris and Miracast
 - **Boot/wake animation:** optional video uploaded from your phone, or a built-in Tigris wordmark animation. Choose startup only or startup and wake, with adjustable wake delay; skip with any key.
 - **Wallpapers:** Bing daily imagery, 360 scenery and pet images, all-ages anime (Wallhaven, falling back to China-accessible sources), artworks, personal photos, custom image sources and gradient themes. Download photos as needed and clean old cached files.
 - **Wallpaper picker and phone setup:** select previews on TV, scan a QR code to upload photos, provide custom photo/image-feed URLs, change wallpapers/screensavers, upload a boot movie or customize the settings icon and backdrop. The LAN configuration page runs while the picker is open and for five minutes afterward. **The phone companion page now automatically follows the phone browser's language (Chinese or English)**, independently of the TV's system language, including upload buttons, wallpaper labels, status messages and errors.
-- **Photo frame and Apple TV aerial screensaver:** slowly pan/zoom photos or stream aerial footage from Apple with location labels. Can become the system screensaver; video playback is not intentionally interrupted.
+- **Photo frame and Apple TV aerial screensaver:** slowly pan/zoom photos or stream aerial footage from Apple with location labels. It can be the system screensaver. It starts on its own only after the Tigris home screen has been idle. “Start After” is an in-app countdown and does not change the TV’s screen-off timeout. It does not appear while another app is in front, while media or a cast is playing, or while another window holds the screen on.
 - **HDMI shortcuts on the home screen:** Control Center → Inputs → Show on Home, where available.
 - **Home guard:** helps keep Tigris in front on OEM firmware that forces its own launcher. Does not require root and is off by default.
 - **Background memory cleanup:** periodic cleanup and a configurable keep-alive list.
+
+</details>
+
+<details>
+<summary><strong>Platform features and manufacturer limitations</strong></summary>
 
 ## Compatibility by feature
 
@@ -189,7 +253,8 @@ These are **implementation capabilities**, not proof of hardware compatibility o
 | Force-stop selected background apps | | ✓ | |
 | Remove certain preinstalled apps for current user | | ✓ | |
 | Sleep, shutdown and restart | | ✓ | |
-| Set photo frame as screensaver / idle schedule | | ✓ | |
+| Photo-frame idle timer (home screen only; does not change screen-off) | ✓ | | |
+| Set photo frame as the system screensaver | | ✓ | |
 | Volume | Android media stream | | BRAVIA volume |
 | Inputs / HDMI | When exposed by system TV framework | | Current input and switching |
 | Backlight slider | Xiaomi adapter may use an approved ADB grant | | BRAVIA backlight |
@@ -218,7 +283,7 @@ For this specific firmware, `adb install` rejects the package and APKs declaring
 
 ### Xiaomi / Redmi China firmware
 
-The Xiaomi adapter can use `picture_backlight` for brightness after `WRITE_SECURE_SETTINGS` approval, Xiaomi's external-source player for input switching, and Xiaomi's settings/Wi-Fi screens. It also has a workaround for the manufacturer's screensaver. **These paths have not been comprehensively tested by this project's maintainers on Xiaomi hardware.** See the issue reports above for observed problems.
+The Xiaomi adapter can use `picture_backlight` for brightness after `WRITE_SECURE_SETTINGS` approval, Xiaomi's external-source player for input switching, and Xiaomi's settings/Wi-Fi screens. The photo frame keeps its own idle timer and appears only while the home screen is in front, with nothing playing and no other window holding the screen on. A missing or non-positive `screen_saver_timeout` uses the in-app minutes; a positive value still starts 15 seconds early so Xiaomi's screensaver does not win. The setting does not write the system screen-off timeout. **These paths have not been comprehensively tested by this project's maintainers on Xiaomi hardware.** See the issue reports above for observed problems.
 
 **Never disable Xiaomi's stock launcher** (`com.mitv.tvhome` / PatchWall); it can leave the TV with a black screen on boot. Use Tigris's optional home guard instead. The guard uses an accessibility service to detect vendor-home foreground changes, a notification listener to help restart after OEM process termination, and optional secure settings/overlay permissions. Those operations require user authorization and can behave differently across firmware versions.
 
@@ -231,6 +296,11 @@ The Xiaomi adapter can use `picture_backlight` for brightness after `WRITE_SECUR
 The brand-specific adapters live under [`app/src/main/java/com/leslie/tvhome/tv/`](app/src/main/java/com/leslie/tvhome/tv/): `TvControls.kt`, `AndroidAdapter.kt`, `SonyAdapter.kt`, `TclAdapter.kt`, `XiaomiAdapter.kt`, and `CoocaaAdapter.kt`. Each brand overrides only its non-standard behavior; standard Android methods remain the fallback.
 
 To contribute a new model, have a developer or coding agent follow [AGENTS.md §9](AGENTS.md#9-adapting-tigris-to-a-tv-that-isnt-fully-supported), inspect that TV's actual interfaces and submit a pull request. Never disable/uninstall a stock launcher or change critical TV settings without the owner's approval.
+
+</details>
+
+<details>
+<summary><strong>Manual builds, casting recommendations and developer instructions</strong></summary>
 
 ## Build and install manually
 
@@ -258,6 +328,8 @@ See [AGENTS.md](AGENTS.md) for permissions, setup and verification. Official rel
 ## Casting recommendation
 
 Tigris has no built-in casting receiver. The open-source [Miracast Receiver](https://github.com/weekdayjast/MiracastReceiver) is one option for AirPlay, DLNA and Miracast (some firmware features may require root). Install the APK matching your TV's CPU architecture. Tigris's cleanup keep-alive defaults account for this app.
+
+</details>
 
 ## License and third-party notices
 

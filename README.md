@@ -13,7 +13,7 @@
 > 十二生肖开源系列第三个项目：虎。Tigris 是拉丁语和希腊语里的“老虎”。
 
 - 官网：**[tigris-tv.pages.dev](https://tigris-tv.pages.dev)**
-- 最新正式版：**[v2.0.16 Release](https://github.com/lesnolie/Tigris/releases/tag/v2.0.16)**（[标准版 APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/Tigris-v2.0.16.apk) · [兼容守护版 Guard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/Tigris-guard-v2.0.16.apk) · [SHA-256 校验文件](https://github.com/lesnolie/Tigris/releases/download/v2.0.16/SHA256SUMS-v2.0.16.txt)）
+- 最新正式版：**[v2.0.24 Release](https://github.com/lesnolie/Tigris/releases/tag/v2.0.24)**（[标准版 APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.24/Tigris-v2.0.24.apk) · [兼容守护版 Guard APK](https://github.com/lesnolie/Tigris/releases/download/v2.0.24/Tigris-guard-v2.0.24.apk) · [SHA-256 校验文件](https://github.com/lesnolie/Tigris/releases/download/v2.0.24/SHA256SUMS-v2.0.24.txt)）
 - 文档地图：**[docs/README.md](docs/README.md)**
 
 [![观看 Tigris 宣传片](docs/screenshots/film.jpg)](https://tigris-tv.pages.dev/#film)
@@ -24,7 +24,7 @@
 
 ## 下载哪个安装包？按电视系统和固件选择
 
-> **正式版为 v2.0.16。** 标准版 `Tigris-v2.0.16.apk`，兼容守护版 `Tigris-guard-v2.0.16.apk`，沿用原有签名，可对应类型覆盖升级。本版修复部分 Sony BRAVIA 注册循环、增加 HDMI 切换回退及更准确的 ADB 授权失败提示。不同型号仍需实机验收；Guard 不是所有电视的通用安装包。
+> **最新正式版为 v2.0.24。** 对应 Standard/Guard 类型覆盖升级。极致液态玻璃切换无延迟：进入设置、更换背景、Top Shelf 切换时玻璃与背景同帧变化，并降低滚动时的绘制开销；包含 v2.0.23 的统一相框计时。详见 [更新说明](docs/releases/v2.0.24.md)。
 
 | 设备 / 系统 | 先选哪个包 | 什么时候换另一种 | 必须注意 |
 |---|---|---|---|
@@ -37,6 +37,43 @@
 | Samsung **Tizen**、海信**原生 VIDAA** | **无兼容的 Android APK 安装方式** | 不适用 | 请勿执行 Android ADB 安装命令 |
 
 **如何验收：** 安装后先打开其他应用，再按实体遥控器 Home；分别检查冷开机、待机唤醒、长按 Home 清理内存。无法通过时保留原厂桌面，按照[机型安装/恢复指南](docs/installation-compatibility.md)继续。切换 Standard/Guard 应先确认厂商限制与签名兼容性，**不要为解决安装失败直接卸载已有 Tigris，以免丢失设置和文件夹**。
+
+## v2.0.24：玻璃与背景同步切换
+
+进入设置、更换壁纸、进入或退出 Top Shelf（顶部内容预览）时，极致液态玻璃与背景一起准备、同帧切换，并同步淡入；滚动设置页时也降低了绘制开销。Sony XR-55A80J（Android 12）实测，设置页画面稳定时间从约 1.05–1.27 秒缩短到 0.13–0.22 秒。
+
+极致液态玻璃仍默认关闭，可在「主屏幕设置 → 控制中心样式」下方开启。图形处理器从空闲唤醒后的按键首帧仍偶有延迟，其他机型未验证。标准版和兼容守护版使用原签名，对应类型覆盖升级保留数据。详见 [v2.0.24 更新说明](docs/releases/v2.0.24.md)。
+
+## v2.0.23：接管后的统一相框计时
+
+确认桌面接管并完成所需授权后，Android 标准系统屏保沿用 Tigris 的相框等待时间；关闭功能或失去接管后尝试还原原设置，并保留用户后续修改。明确暂停的前台视频可由系统触发相框，播放与投屏继续避让；普通应用模式不修改系统计时。详见 [v2.0.23 更新说明](docs/releases/v2.0.23.md)。
+
+## v2.0.22：优化 App 图标与可选极致液态玻璃
+
+保留现有 tvOS 16:9 图标卡片、Dock 布局、文件夹及焦点动画：比例合适的电视横幅完整铺满卡片；方形或超宽素材改为等比居中，不再粗暴裁剪；低分辨率横幅改用原生图标。无横幅的 App 改成克制的渐变背景与清晰居中图标，不再把原图标放大模糊当背景。另外包含 [#86](https://github.com/lesnolie/Tigris/pull/86) 的可选极致液态玻璃：静态壁纸的折射材质、动态壁纸的透明 Dock / 控制中心，默认关闭。详见 [v2.0.22 更新说明](docs/releases/v2.0.22.md)。
+
+## v2.0.21：更新安装与相框空闲逻辑
+
+相框会在系统待机截止时间前启动；Tigris 桌面、设置、更新和壁纸页长时间无操作可以进入相框。第三方播放器必须确认前台且 MediaSession 报告 `PAUSED`，同时由 Android 自行启动系统屏保；**视频播放、音频及已识别投屏接收器（包括静音）禁止抢屏**。索尼安装确认改用系统真实 PackageInstaller Intent，暂时无法访问 GitHub 时保留已校验更新信息，兼容 HGTV 的纯数字版本标签。不同厂商机型仍需实机验收。详见 [v2.0.21 更新说明](docs/releases/v2.0.21.md)。
+
+<details>
+<summary><strong>历史版本更新记录（v2.0.13–v2.0.20）</strong></summary>
+
+## v2.0.20：旧版 Android 的 Dock 玻璃
+
+Android 11 及更早的系统上，动态视频背景的 Dock 按真实尺寸画圆角，里面是大约 55% 不透明的慢速模糊，圆角不再被拉糊，视频继续在下面播放。拷贝太慢时改成一层淡罩。Android 12 及以上不变。详见 [v2.0.20 更新说明](docs/releases/v2.0.20.md)。
+
+## v2.0.19：更新恢复、屏保与电源键关机
+
+更新中断后可继续安装，或「强制重试」重建任务，保留原应用数据。系统屏保不再因桌面计时被重置而立即退出；自动待机也不会误触发电源键彻底关机。详见 [v2.0.19 更新说明](docs/releases/v2.0.19.md)。
+
+## v2.0.18：安装确认、相框和唤醒动画
+
+没有安装确认页的电视会保存校验过的 APK，并显示 `adb install -r` 命令。相框不会打断正在播放的视频或已识别的投屏场景；v2.0.21 进一步扩展了设置页和已确认暂停视频时的空闲规则。Android 9–11 从待机唤醒时，开机动画会等屏幕点亮再播放。请参阅 [v2.0.18 更新说明](docs/releases/v2.0.18.md)。
+
+## v2.0.17：Sony Android 9 同步权限
+
+清单声明普通权限 `READ_SYNC_SETTINGS` 与 `WRITE_SYNC_SETTINGS`。`RevivalSync.ensure()` 因此可以在 Android 9 上读取并设置同步适配器，不再抛出 [#53](https://github.com/lesnolie/Tigris/issues/53) 里记录的 `SecurityException`。安装时自动授予，不增加运行时弹窗，也不改守护或同步生命周期。对应 [PR #72](https://github.com/lesnolie/Tigris/pull/72)。该机的实体主页键、开机与无障碍恢复仍需复测，#53 保持开放。请参阅 [v2.0.17 更新说明](docs/releases/v2.0.17.md)。
 
 ## v2.0.16：Sony 控制与 ADB 诊断
 
@@ -59,6 +96,11 @@ Settings 和「应用与更新」统一使用透明折射玻璃及当前主屏�
 - **HGTV 红果短剧**：连接 [pan8664716/HGTV Releases](https://github.com/pan8664716/HGTV/releases)，用户主动选择才下载与安装。HGTV 是第三方客户端，使用非官方内容接口；内容平台变更可能影响功能。
 
 **应用与更新**现在采用三张 tvOS 风格应用卡片，每个应用仅显示「获取 / 打开 / 更新」等当前适用的操作；下载进度、继续安装、失败重试按需出现。两者均**不包含在 Tigris APK**、不会被自动首次安装或预先塞进 Dock；安装成功后会像普通应用一样出现在应用列表，可以自行移动到 Dock。安装前检查 SHA-256 和已知发布签名，不匹配则停止，不清除已有应用数据。自动更新仅作用于已安装的应用。更多说明见 [软件更新和可选安装](docs/updater.md)。
+
+</details>
+
+<details>
+<summary><strong>完整功能清单、演示与素材声明</strong></summary>
 
 ## 1. 展示与功能
 
@@ -88,13 +130,14 @@ Settings 和「应用与更新」统一使用透明折射玻璃及当前主屏�
 
 - **主屏幕**：默认 5 列，可选 6 列的 16:9 圆角图标，选中时弹性放大、倾斜并带高光和投影。右上角显示时间、网络与可选头像；时间支持 12 / 24 小时制，也可改成左上角大时钟或隐藏。
 - **Liquid Glass Dock**：第一排应用放在液态玻璃 Dock 中，下一排露出上沿。玻璃模糊、边缘折射和高光会按当前背景预先生成，低配电视可改用更省性能的样式。
+- **极致液态玻璃（默认关闭）**：主屏幕设置 → 控制中心样式下方可开启。静态背景使用屏幕空间折射、轻微色散、自适应文字和内外边缘光。动态壁纸下 Dock 和控制中心直接透明透出原视频，保留着色与边缘光，主体不再依赖截图刷新。Dock 的着色比文字面板更轻，静态壁纸底部也减少压黑。深浅主题分别保存 0%–150% 着色；可选择减少透明效果，系统高对比度文字也会触发实色回退。建议高性能电视开启；关闭后恢复轻量玻璃。Android 10 起使用真正的文字 Multiply / Plus 混色，Android 9 使用兼容混合。[实机效果截图与验证记录](docs/extreme-glass-validation.md)。
 - **顶部内容**：选中 Dock 第一排的云视听小电视、第三方哔哩哔哩客户端（`com.tutu.myblbl`）或斗鱼时，上半屏轮播对应内容。也可以在设置里给一个 Dock 应用填写 JSON 地址。格式、失败时的回退，以及 Jellyfin / Emby 需要转换服务的说明见 [docs/top-shelf.md](docs/top-shelf.md)。
 - **主屏幕设置**：仿 tvOS 的分组布局，可分别调整时钟、聚焦动画、控制中心样式、背景、相框、开机动画、头像和桌面守护。
 - **最近打开自动置顶（可开启）**：v2.0.6 首次安装或从旧版升级时默认关闭；可在「主屏幕设置 → App → 最近打开的 App 自动置顶」开启，之后成功打开的 App 或文件夹会移到第一位。关闭后固定当前排序，长按「编辑主屏幕」可自行调整；已有的个人布局和开关选择会保留。
 - **编辑、文件夹与删除**：长按图标可移动、放入文件夹或删除。电视预装 App 也可用 `pm uninstall --user 0` 从当前用户空间移除，并可在设置中恢复；系统运行必需组件受到保护。
 - **控制中心**：遥控器返回键或右上角按钮打开，提供网络、待机、关机、重启、释放内存、相框、设置、亮度、音量和 HDMI 输入源。低配机型可切换成深色面板。
 - **背景与手机上传**：支持必应每日风景、360 壁纸、Wallhaven 全年龄二次元、公有领域名画、纯色渐变、手机相册照片和自定义图片链接。手机扫码页面还支持上传头像、开机视频和设置页背景。**扫码后的手机页面现支持中英文自动识别**：跟随手机浏览器语言，和电视系统语言独立；英文手机不会再看到中文上传按钮或提示。
-- **相框与航拍屏保**：照片全屏轮播，画面缓慢平移缩放，时间文字定时移动以减少 OLED 烙印；也可在线播放 Apple TV 航拍视频，支持左右键切换，断网时回到照片。
+- **相框与航拍屏保**：照片全屏轮播，画面缓慢平移缩放，时间文字定时移动以减少 OLED 烙印；也可在线播放 Apple TV 航拍视频，支持左右键切换，断网时回到照片。自动出现只发生在 Tigris 主屏幕本身空闲之后。「空闲多久显示相框」是应用内倒计时，不修改系统熄屏时间。其他应用在前台、正在播放或投屏、或有窗口保持亮屏时不会出现。
 - **HDMI 输入源上屏**：在控制中心把常用 HDMI 口固定到主屏幕，按一下即可切换。
 - **软件更新与投屏**：每 6 小时检查 Tigris 和 [MiracastReceiver](https://github.com/weekdayjast/MiracastReceiver) 的正式版。更新前验证包名、系统版本、递增版本号和签名；不会自动卸载、不清数据、不接受降级。电视系统仍可能要求一次安装来源授权或每次确认。
 - **内存清理**：支持定时清理和待机清理，保留名单可在设置中修改。
@@ -102,6 +145,11 @@ Settings 和「应用与更新」统一使用透明折射玻璃及当前主屏�
 ### 素材与商标说明
 
 仓库为界面展示打包了默认开机视频，并在线播放 Apple TV 航拍内容。这些素材不附带 Apple 或任何第三方的额外授权，也不代表 Tigris 与 Apple 有关联。对外分发、商用或再发布时，请确认素材授权；也可以在设置中改用 Tigris 字样动画或上传自己拥有权利的视频。截图中的影视封面、摄影作品和第三方图标版权归各自权利人所有。
+
+</details>
+
+<details>
+<summary><strong>LG webOS 开发预览版安装指南（不可安装 Android APK）</strong></summary>
 
 ## LG webOS 专区（独立平台 · 开发预览版）
 
@@ -165,6 +213,11 @@ Windows 可在 PowerShell 执行 `ares-*` 指令；一行 Shell 脚本需要 mac
 详细说明与英文版：**[LG webOS 独立安装指南](webos/README.md)** · **[AI 与 Home Helper 安全预检规范](docs/WEBOS_AI_INSTALL.md)** · **[官网 webOS 专区](https://tigris-tv.pages.dev/webos/)**。
 
 ---
+
+</details>
+
+<details>
+<summary><strong>Android TV 安装指南：ADB、AI 安装与机型授权</strong></summary>
 
 ## 2. 安装指南
 
@@ -403,6 +456,11 @@ curl.exe -s -u ':<PIN>' http://192.168.1.20/sony/accessControl --data-binary '@b
 
 守护默认关闭。AI 安装会按 [AGENTS.md](AGENTS.md) 授权并打开；手动安装后也可在 设置 → 桌面守护 中开启。索尼等原生 Android TV 通常不需要。
 
+</details>
+
+<details>
+<summary><strong>安全还原、关闭守护和卸载步骤</strong></summary>
+
 ## 3. 还原与卸载
 
 ### 用安装脚本还原
@@ -461,6 +519,11 @@ adb -s 192.168.1.20:5555 uninstall com.leslie.tvhome
 最后原样贴出 enabled_accessibility_services 和按主页键后的 mCurrentFocus 输出。
 ```
 
+</details>
+
+<details>
+<summary><strong>机型兼容性明细与社区反馈（按设备核实）</strong></summary>
+
 ## 4. 兼容性与社区反馈
 
 > 截至 2026-10-24。下表记录具体机型、系统版本和测试版本上的证据，不代表整个品牌保证可用。**能安装不等于能设默认桌面，也不等于亮度、HDMI、壁纸和开机接管全部正常。**
@@ -487,7 +550,8 @@ adb -s 192.168.1.20:5555 uninstall com.leslie.tvhome
 | 释放内存 | ✅ 只清缓存 | ✅ 可结束后台 App | |
 | 删除预装 App | | ✅ | |
 | 待机、关机、重启 | | ✅ | |
-| 相框设为系统屏保、空闲时长 | | ✅ | |
+| 相框空闲倒计时（仅主屏幕，不改熄屏时间） | ✅ | | |
+| 相框设为系统屏保 | | ✅ | |
 | 音量滑条 | ✅ Android 标准音量 | | ✅ 电视音量 |
 | HDMI 输入源切换 | ✅ 大多数电视 | | ✅ 可显示当前输入源 |
 | 亮度 / 背光 | 小米（需授权） | ✅ | ✅ |
@@ -499,7 +563,7 @@ adb -s 192.168.1.20:5555 uninstall com.leslie.tvhome
 
 - **索尼**：BRAVIA IP 控制接口可提供背光、原生音量和 HDMI 输入源。未注册时自动回退到 Android 标准接口。
 - **TCL / 雷鸟国行**：输入源打开 TCL 自带选择器，设置打开 TCL 原生设置，没有可用背光接口。安装需 Guard 版与多屏互动。
-- **小米 / Redmi 国行**：背光使用 `picture_backlight`，输入源调用小米播放器，设置和 Wi-Fi 打开小米原生设置；以上功能仍需要更多社区实机复测。
+- **小米 / Redmi 国行**：背光使用 `picture_backlight`，输入源调用小米播放器，设置和 Wi-Fi 打开小米原生设置；以上功能仍需要更多社区实机复测。相框由 Tigris 自己计时，只在主屏幕空闲且没有播放或亮屏锁时出现。`screen_saver_timeout` 缺失或小于等于 0 时用设置里的分钟数；为正数时仍提前 15 秒，避免小米屏保抢先。该设置不写入系统熄屏时间。
 - **酷开 / 创维**：目前只适配输入源选择器，尚未在官方新版上完成真机验证。
 - **其他品牌**：使用 Android 标准接口。Android 没有统一背光 API，因此亮度滑条会隐藏；连接 ARC / eARC 功放时，标准音量可能控制电视本体。
 
@@ -512,7 +576,9 @@ adb -s 192.168.1.20:5555 uninstall com.leslie.tvhome
 <!-- TV_COMPATIBILITY_AUTO_START -->
 | 品牌与型号 | Android | Tigris / 安装包 | 安装结果 | Issue 状态 | 来源 |
 |---|---|---|---|---|---|
-| Sony XR-55A80K &#124; BRAVIA 4K VH21 | Android 12 (API level 31) | v2.0.15 / 标准版 | 已安装且能启动（自报） | 未关闭 | [#69](https://github.com/lesnolie/Tigris/issues/69) |
+| TCL Q10L | 安卓12 | 2.0.22 / 标准版 | 已安装且能启动（自报） | 未关闭 | [#89](https://github.com/lesnolie/Tigris/issues/89) |
+| SONY 9500G | 10 | 2.0.17 / 标准版 | 已安装且能启动（自报） | 未关闭 | [#77](https://github.com/lesnolie/Tigris/issues/77) |
+| Sony XR-55A80K &#124; BRAVIA 4K VH21 | Android 12 (API level 31) | v2.0.15 / 标准版 | 已安装且能启动（自报） | 已关闭（未验证修复） | [#69](https://github.com/lesnolie/Tigris/issues/69) |
 | Sony BRAVIA 4K GB（BRAVIA_ATV2_CN，国行，2017 平台） | Android 9 (API 28) | v2.0.11 / 标准版 | 已安装且能启动（自报） | 未关闭 | [#53](https://github.com/lesnolie/Tigris/issues/53) |
 | GOOJODOQ HY300 Pro+ | Android 14 | v2.0.9 / 标准版 | 已安装且能启动（自报） | 未关闭 | [#47](https://github.com/lesnolie/Tigris/issues/47) |
 | 创维酷开 85P3DMAX | Android 11 | 2.0.2 / 自定义 Fork | 已安装且能启动（自报） | 已关闭（未验证修复） | [#15](https://github.com/lesnolie/Tigris/issues/15) |
@@ -543,7 +609,12 @@ tv/
 
 适配成功后欢迎提交 Pull Request，让同品牌用户直接复用。
 
+</details>
+
 ## 5. 常见问题、开发与许可
+
+<details>
+<summary><strong>常见问题与开发者手动构建</strong></summary>
 
 ### 常见问题
 
@@ -611,6 +682,8 @@ app/build/outputs/apk/guard/release/app-guard-release.apk
 ```
 
 本地构建使用本机签名，可能与正式 Release 不同。覆盖安装前先确认签名；不要为了安装本地包直接卸载正式版。
+
+</details>
 
 ### 许可与第三方声明
 

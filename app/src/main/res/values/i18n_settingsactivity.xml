@@ -72,7 +72,7 @@
     <string name="i18n_settingsactivity_070" formatted="false">Downloading…</string>
     <string name="i18n_settingsactivity_071">%1$s photos</string>
     <string name="i18n_settingsactivity_072" formatted="false">Start Screen Saver When Idle</string>
-    <string name="i18n_settingsactivity_073" formatted="false">Show photos or Aerials when your TV is idle.</string>
+    <string name="i18n_settingsactivity_073" formatted="false">Show photos or Aerials when Home is idle. Tigris settings and update pages also use the TV system screensaver timeout. Other foreground apps and active playback are not covered.</string>
     <string name="i18n_settingsactivity_074" formatted="false">Setting up…</string>
     <string name="i18n_settingsactivity_075" formatted="false">Local debugging must be authorized first</string>
     <string name="i18n_settingsactivity_076" formatted="false">Screen Saver Content</string>
@@ -80,9 +80,7 @@
     <string name="i18n_settingsactivity_078" formatted="false">Aerials</string>
     <string name="i18n_settingsactivity_079" formatted="false">Photos</string>
     <string name="i18n_settingsactivity_080" formatted="false">Start After</string>
-    <string name="i18n_settingsactivity_081" formatted="false">How long without input before the frame appears.</string>
-    <string name="i18n_settingsactivity_082" formatted="false">Setting up…</string>
-    <string name="i18n_settingsactivity_083" formatted="false">Local debugging must be authorized first</string>
+    <string name="i18n_settingsactivity_081" formatted="false">How long to wait before showing the frame. Unified mode also applies this time to the system screensaver after verified takeover. Confirmed paused video may enter the frame; active playback and casting are excluded. Without takeover this only controls Tigris Home.</string>
     <string name="i18n_settingsactivity_084" formatted="false">Time per Photo</string>
     <string name="i18n_settingsactivity_085" formatted="false">How long each photo is shown in the frame.</string>
     <string name="i18n_settingsactivity_086">%1$s s</string>
@@ -101,7 +99,7 @@
     <string name="i18n_settingsactivity_099" formatted="false">Apps that won\'t be closed when freeing memory, such as casting and music.</string>
     <string name="i18n_settingsactivity_100">%1$s</string>
     <string name="i18n_settingsactivity_101" formatted="false">When you press power on the remote</string>
-    <string name="i18n_settingsactivity_102" formatted="false">Standby: as usual. Full power off: saves power, but boot takes longer.</string>
+    <string name="i18n_settingsactivity_102" formatted="false">Full power off requires a system-confirmed power-key action and takes longer to boot. Automatic standby and the screensaver never trigger full power off.</string>
     <string name="i18n_settingsactivity_103" formatted="false">Full power off</string>
     <string name="i18n_settingsactivity_104" formatted="false">Standby</string>
     <string name="i18n_settingsactivity_105" formatted="false">Requires local debugging authorization to take effect</string>
@@ -158,4 +156,14 @@
     <string name="i18n_settingsactivity_156" formatted="false">Daily</string>
     <string name="i18n_settingsactivity_157">%1$s h</string>
     <string name="i18n_settingsactivity_158">%1$s min</string>
+    <string name="i18n_settingsactivity_159" formatted="false">Extreme Liquid Glass</string>
+    <string name="i18n_settingsactivity_160" formatted="false">Refraction and dispersion over still backgrounds; video passes directly through transparent glass with rim light. Recommended for high-performance TVs.</string>
+    <string name="glass_light_tint">Glass tint · light mode</string>
+    <string name="glass_dark_tint">Glass tint · dark mode</string>
+    <string name="glass_tint_help">Adjust tint from 0% to 150%. 100% is the reference material; 0% keeps the blur, lens and edge light.</string>
+    <string name="glass_reduce_transparency">Reduce glass transparency</string>
+    <string name="glass_reduce_transparency_help">Use solid surfaces for clearer text. System high contrast text also enables this fallback.</string>
+    <string name="unified_idle_title" formatted="false">Unified idle timer</string>
+    <string name="unified_idle_desc" formatted="false">After verified Home takeover and authorization, use the photo-frame time for Android screensaver idle. Disable separate standard Android sleep deadlines. Playback and casting remain protected. Turning this off restores saved settings; vendor-private timers are unchanged.</string>
+    <string name="unified_idle_pending" formatted="false">Waiting for takeover / permissions</string>
 </resources>

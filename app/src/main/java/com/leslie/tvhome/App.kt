@@ -5,6 +5,7 @@ import android.app.Application
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+        ScreensaverScope.register(this)
         I18n.initialize(this)
         VoiceAssistant.initialize(this)
         VoskChinese.preload(this)
@@ -15,5 +16,14 @@ class App : Application() {
             sp.edit().putLong("lastLaunchCheck", System.currentTimeMillis()).apply()
             Updates.executor.execute { Updates.check(this) }
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // Prebuilt Settings scenes are a convenience; give them back under pressure.
+        // Not on UI_HIDDEN: that is every app launch from Home, not memory pressure.
+        @Suppress("DEPRECATION")
+        if (level in TRIM_MEMORY_RUNNING_LOW..TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_BACKGROUND)
+            SettingsActivity.trimMemory()
     }
 }

@@ -1,5 +1,16 @@
 # Installing Tigris — instructions for AI agents
 
+## Agent Quick Card
+
+- **Official Android TV app**: root Gradle project, module `:app`.
+- **Official website**: `website/` (Astro), separate from the APK.
+- **Android build/test**: `.\gradlew.bat :app:assembleDebug` and `.\gradlew.bat :app:testDebugUnitTest`.
+- **Website check/build**: from `website/`, run `pnpm check` and `pnpm build`.
+- **Host installation**: `tools/` and `install.sh`; not app runtime code. Windows installation has a project-specific Git Bash requirement; do not use it unless the task explicitly requires installation.
+- **Separate platform**: `webos/` is not Android; never use ADB or Android `pm`/`am` commands for it.
+- **Search skip**: `build/`, `.gradle/`, `.kotlin/`, `node_modules/`, `website/dist/`, and generated release assets.
+- **Safety gate**: never disable or uninstall the stock launcher; do not publish, deploy, or mark hardware verified without explicit authorization and evidence.
+
 ## Module development boundaries / 模块开发边界
 
 Read [the bilingual module guide](docs/modules.md) and the

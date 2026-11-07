@@ -4,7 +4,8 @@
 
 - **Official Android TV app**: root Gradle project, module `:app`.
 - **Official website**: `website/` (Astro), separate from the APK.
-- **Android build/test**: `.\gradlew.bat :app:assembleDebug` and `.\gradlew.bat :app:testDebugUnitTest`.
+- **Android build/test**: `.\gradlew.bat :app:assembleStandardDebug :app:assembleGuardDebug` and `.\gradlew.bat :app:testStandardDebugUnitTest :app:testGuardDebugUnitTest`.
+- **Android SDK**: set `ANDROID_HOME` or `sdk.dir` in the ignored `local.properties`; both variants above were verified with the local SDK.
 - **Website check/build**: from `website/`, run `pnpm check` and `pnpm build`.
 - **Host installation**: `tools/` and `install.sh`; not app runtime code. Windows installation has a project-specific Git Bash requirement; do not use it unless the task explicitly requires installation.
 - **Separate platform**: `webos/` is not Android; never use ADB or Android `pm`/`am` commands for it.
